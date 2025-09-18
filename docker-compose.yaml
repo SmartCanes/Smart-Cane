@@ -1,0 +1,41 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mqtt_broker
+    ports:
+      - "1883:1883" # MQTT
+      - "9001:9001" # MQTT over WebSocket (for web app)
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+  node-middleware:
+    build: ./middleware # contains middleware.js + Dockerfile
+    container_name: graphhopper_middleware
+    depends_on:
+      - mosquitto
+      - graphhopper
+    environment:
+      - MQTT_BROKER=mqtt://mosquitto:1883
+      - GH_URL=http://graphhopper:8989/route
+
+  # php-backend:
+  #   image: php:8.2-apache
+  #   container_name: web_backend
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./php:/var/www/html
+  #   depends_on:
+  #     - mosquitto
+
+  graphhopper:
+    image: graphhopper/graphhopper:latest
+    container_name: graphhopper
+    ports:
+      - "8989:8989"
+    volumes:
+      - ./maps/data:/data
+    environment:
+      - JAVA_OPTS=-Xmx2g
