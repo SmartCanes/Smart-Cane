@@ -39,3 +39,8 @@ services:
     volumes:
       - ./maps/graph-cache:/app/graph-cache
       - ./maps/config/config.yml:/app/config.yml
+  react-app:
+    build: ./app
+    container_name: react-vite
+    ports:
+      - "3000:80"
