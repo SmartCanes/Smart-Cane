@@ -4,13 +4,19 @@
   "description": "",
   "main": "middleware.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node middleware.js",
+    "dev": "nodemon middleware.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.12.2",
-    "mqtt": "^5.14.1"
+    "mqtt": "^5.14.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }

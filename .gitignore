@@ -1,1 +1,3 @@
 /maps/graph-cache
+node_modules/
+.env

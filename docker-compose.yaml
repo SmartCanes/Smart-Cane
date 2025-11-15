@@ -10,15 +10,15 @@ services:
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
 
-  # node-middleware:
-  #   build: ./middleware
-  #   container_name: graphhopper_middleware
-  #   depends_on:
-  #     - mosquitto
-  #     - graphhopper
-  #   environment:
-  #     - MQTT_BROKER=mqtt://mosquitto:1883
-  #     - GH_URL=http://graphhopper:8989/route
+  node-middleware:
+    build: ./middleware
+    container_name: graphhopper_middleware
+    depends_on:
+      - mosquitto
+      # - graphhopper
+    environment:
+      - MQTT_BROKER=mqtt://mosquitto:1883
+      - GH_URL=http://graphhopper:8989/route
 
   # php-backend:
   #   image: php:8.2-apache
@@ -29,18 +29,18 @@ services:
   #     - ./php:/var/www/html
   #   depends_on:
   #     - mosquitto
-  graphhopper:
-    build: ./maps
-    container_name: graphhopper
-    restart: unless-stopped
-    ports:
-      - "8989:8989"
-      - "8990:8990"
-    volumes:
-      - ./maps/graph-cache:/app/graph-cache
-      - ./maps/config/config.yml:/app/config.yml
-  react-app:
-    build: ./app
-    container_name: react-vite
-    ports:
-      - "3000:80"
+  # graphhopper:
+  #   build: ./maps
+  #   container_name: graphhopper
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8989:8989"
+  #     - "8990:8990"
+  #   volumes:
+  #     - ./maps/graph-cache:/app/graph-cache
+  #     - ./maps/config/config.yml:/app/config.yml
+  # react-app:
+  #   build: ./app
+  #   container_name: react-vite
+  #   ports:
+  #     - "3000:80"

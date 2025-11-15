@@ -1,5 +1,7 @@
 const mqtt = require("mqtt");
 const axios = require("axios");
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 4001 });
 
 const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://mosquitto:1883";
 const GH_URL = process.env.GH_URL || "http://graphhopper:8989/route";
@@ -31,11 +33,11 @@ client.on("message", async (topic, message) => {
 
             const res = await axios.get(GH_URL, {
                 params: {
-                    point: `${current.lat},${current.lon}`,
-                    point: `${destination.lat},${destination.lon}`,
+                    point: [`${current.lat},${current.lon}`, `${destination.lat},${destination.lon}`],
                     vehicle: "foot",
                     locale: "en"
                 }
+
             });
 
             const instr = res.data.paths[0].instructions[0];
@@ -51,9 +53,22 @@ client.on("message", async (topic, message) => {
             };
 
             client.publish(TOPIC_INSTR, JSON.stringify(navMsg));
+            broadcast({
+                type: "navigation",
+                instruction: navMsg,
+                rawLocation: current
+            });
             console.log("➡️ Instruction sent:", navMsg);
         }
     } catch (err) {
         console.error("❌ Error:", err.message);
     }
 });
+
+function broadcast(data) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+        }
+    });
+}
