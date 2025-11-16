@@ -12,7 +12,7 @@ services:
 
   node-middleware:
     build: ./middleware
-    container_name: graphhopper_middleware
+    container_name: middleware_server
     depends_on:
       - mosquitto
       # - graphhopper
@@ -20,25 +20,32 @@ services:
       - MQTT_BROKER=mqtt://mosquitto:1883
       - GH_URL=http://graphhopper:8989/route
 
-  # php-backend:
-  #   image: php:8.2-apache
-  #   container_name: web_backend
-  #   ports:
-  #     - "8080:80"
-  #   volumes:
-  #     - ./php:/var/www/html
-  #   depends_on:
-  #     - mosquitto
-  # graphhopper:
-  #   build: ./maps
-  #   container_name: graphhopper
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8989:8989"
-  #     - "8990:8990"
-  #   volumes:
-  #     - ./maps/graph-cache:/app/graph-cache
-  #     - ./maps/config/config.yml:/app/config.yml
+  graphhopper-import:
+    image: israelhikingmap/graphhopper:latest
+    container_name: graphhopper_import
+    volumes:
+      - ./maps:/data
+    command: >
+      --import
+      -i /data/novaliches.osm.pbf
+      -o /data/graph-cache
+      -c /data/config.yml
+    restart: "no"
+
+  graphhopper:
+    image: israelhikingmap/graphhopper:latest
+    container_name: graphhopper
+    ports:
+      - "8989:8989"
+    environment:
+      - JAVA_OPTS=-Xmx2g
+    volumes:
+      - ./maps:/data
+    restart: unless-stopped
+    command: --config /data/config.yml
+    depends_on:
+      - graphhopper-import
+
   # react-app:
   #   build: ./app
   #   container_name: react-vite
