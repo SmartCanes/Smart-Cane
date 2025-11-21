@@ -46,8 +46,8 @@ services:
     depends_on:
       - graphhopper-import
 
-  # react-app:
-  #   build: ./app
-  #   container_name: react-vite
-  #   ports:
-  #     - "3000:80"
+  frontend:
+    build: ./app
+    ports:
+      - "8080:80"
+    restart: unless-stopped
