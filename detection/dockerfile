@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN apt-get update && \
+    apt-get install -y \
+        ffmpeg \
+        libsm6 \
+        libxext6 \
+        libasound2 \
+        espeak \
+        pulseaudio \
+        && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Expose video streaming port (optional)
+EXPOSE 8080
+
+CMD ["python", "app.py"]

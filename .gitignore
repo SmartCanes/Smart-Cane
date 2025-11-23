@@ -1,5 +1,5 @@
 /maps/graph-cache
 /maps/default-gh
-/middleware/node_modules/
-/detection/.venv
+node_modules/
+.venv
 .env
