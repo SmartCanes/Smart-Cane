@@ -10,15 +10,25 @@ services:
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
 
-  node-middleware:
-    build: ./middleware
-    container_name: middleware_server
+  # route-middleware:
+  #   build: ./route-middleware
+  #   container_name: route-middleware
+  #   depends_on:
+  #     - mosquitto
+  #   environment:
+  #     - MQTT_BROKER=mqtt://mosquitto:1883
+  #     - GH_URL=http://graphhopper:8989/route
+
+  listener-middleware:
+    build: ./listener-middleware
+    container_name: listener-middleware
     depends_on:
       - mosquitto
-      # - graphhopper
     environment:
       - MQTT_BROKER=mqtt://mosquitto:1883
-      - GH_URL=http://graphhopper:8989/route
+    ports:
+      - "4000:4000"
+      - "4001:4001"
 
   graphhopper-import:
     image: israelhikingmap/graphhopper:latest
@@ -32,22 +42,30 @@ services:
       -c /data/config.yml
     restart: "no"
 
-  graphhopper:
-    image: israelhikingmap/graphhopper:latest
-    container_name: graphhopper
-    ports:
-      - "8989:8989"
-    environment:
-      - JAVA_OPTS=-Xmx2g
-    volumes:
-      - ./maps:/data
-    restart: unless-stopped
-    command: --config /data/config.yml
-    depends_on:
-      - graphhopper-import
+  # graphhopper:
+  #   image: israelhikingmap/graphhopper:latest
+  #   container_name: graphhopper
+  #   ports:
+  #     - "8989:8989"
+  #   environment:
+  #     - JAVA_OPTS=-Xmx2g
+  #   volumes:
+  #     - ./maps:/data
+  #   restart: unless-stopped
+  #   command: --config /data/config.yml
+  #   depends_on:
+  #     - graphhopper-import
 
-  frontend:
-    build: ./app
-    ports:
-      - "8080:80"
-    restart: unless-stopped
+  # frontend:
+  #   build: ./app
+  #   container_name: frontend_app
+  #   ports:
+  #     - "8080:80"
+  #   restart: unless-stopped
+
+  # backend:
+  #   build: ./server
+  #   container_name: backend_server
+  #   ports:
+  #     - "5000:5000"
+  #   restart: unless-stopped
