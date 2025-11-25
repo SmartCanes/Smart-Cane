@@ -1,5 +1,5 @@
 import mqtt from "mqtt";
-import { TOPIC_LOCATION } from "../mqtt/topic.js";
+import { TOPIC_LOCATION, TOPIC_STATUS } from "../mqtt/topic.js";
 import { getIO } from "./socket.js";
 
 export function initMqttWsBridge() {
@@ -10,13 +10,33 @@ export function initMqttWsBridge() {
 
     mqttClient.on("connect", () => {
         console.log("Connected to MQTT broker");
-        mqttClient.subscribe(TOPIC_LOCATION);
+        mqttClient.subscribe(TOPIC_LOCATION, (err) => {
+            if (err) console.error("Failed to subscribe:", err);
+            else console.log("Subscribed to topic:", TOPIC_LOCATION);
+        });
+        mqttClient.subscribe(TOPIC_STATUS, (err) => {
+            if (err) console.error("Failed to subscribe:", err);
+            else console.log("Subscribed to topic:", TOPIC_STATUS);
+        });
     });
 
     mqttClient.on("message", (topic, message) => {
-        const data = message.toString();
+        const msg = message.toString();
         if (topic === TOPIC_LOCATION) {
-            io.emit("location", data);
+            try {
+                const data = JSON.parse(msg);
+                io.emit("location", data);
+            } catch (e) {
+                console.error("Invalid JSON received:", msg);
+            }
+        }
+        if (topic === TOPIC_STATUS) {
+            try {
+                const data = JSON.parse(msg);
+                io.emit("status", data);
+            } catch (e) {
+                console.error("Invalid JSON received:", msg);
+            }
         }
     });
 
@@ -28,5 +48,5 @@ export function initMqttWsBridge() {
         });
     });
 
-    console.log("Socket IO is ready running at ws://localhost:4000");
+    console.log("Socket IO is ready running at https://localhost:4000");
 }
