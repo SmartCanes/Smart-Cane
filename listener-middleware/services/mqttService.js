@@ -32,8 +32,8 @@ export class MqttService extends EventEmitter {
     subscribeTopics() {
         this.topics.forEach((topic) => {
             this.client.subscribe(topic, (err) => {
-                if (err) console.error(`❌ Failed to subscribe ${topic}:`, err);
-                else console.log(`📌 Subscribed to topic: ${topic}`);
+                if (err) console.error(`Failed to subscribe ${topic}:`, err);
+                else console.log(`Subscribed to topic: ${topic}`);
             });
         });
     }
@@ -43,7 +43,7 @@ export class MqttService extends EventEmitter {
         try {
             data = JSON.parse(message.toString());
         } catch (err) {
-            return console.error("❌ Invalid JSON received on topic", topic, ":", message.toString());
+            return console.error("Invalid JSON received on topic", topic, ":", message.toString());
         }
 
         this.emit(topic, data);

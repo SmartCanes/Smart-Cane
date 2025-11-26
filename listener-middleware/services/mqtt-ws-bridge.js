@@ -13,7 +13,7 @@ export function initMqttWsBridge() {
 
         mqttService.on(topic, (data) => {
             io.emit(socketEvent, data);
-            console.log(`Emitted ${socketEvent} event via Socket.IO`, data);
+            console.log(`Emitted ${socketEvent} event`, data);
         });
     });
 
