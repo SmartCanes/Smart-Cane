@@ -5,8 +5,12 @@ let io = null;
 export function initSocket(httpServer) {
     if (io) return io;
 
+    const allowedOrigins = process.env.SOCKET_IO_ALLOWED_ORIGINS
+        ? process.env.SOCKET_IO_ALLOWED_ORIGINS.split(",").map(origin => origin.trim())
+        : ["*"];
+
     io = new Server(httpServer, {
-        cors: { origin: "*" }
+        cors: { origin: allowedOrigins, methods: ["GET", "POST"] }
     });
 
     io.on("connection", (socket) => {
