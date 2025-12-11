@@ -1,0 +1,28 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: mysql_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: smart_cane_db
+      MYSQL_USER: smart_user
+      MYSQL_PASSWORD: smart_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: smart_user
+      PMA_PASSWORD: smart_password
+    ports:
+      - "8081:80"
+    depends_on:
+      - mysql
