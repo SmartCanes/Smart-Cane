@@ -2,13 +2,48 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     container_name: mqtt_broker
-    ports:
-      - "1883:1883"
-      - "9001:9001"
+    expose:
+      - "9001"
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
+    networks:
+      - app-net
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: smart_cane_db
+      MYSQL_USER: smart_cane_db
+      MYSQL_PASSWORD: smart_cane_password
+    expose:
+      - "3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - app-net
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: rootpassword
+      UPLOAD_LIMIT: 128M
+    expose:
+      - "80"
+    networks:
+      - app-net
 
   # route-middleware:
   #   build: ./route-middleware
@@ -19,19 +54,18 @@ services:
   #     - MQTT_BROKER=mqtt://mosquitto:1883
   #     - GH_URL=http://graphhopper:8989/route
 
-  # listener-middleware:
-  #   build: ./listener-middleware
-  #   container_name: listener-middleware
-  #   depends_on:
-  #     - mosquitto
-  #   environment:
-  #     - MQTT_BROKER=mqtt://mosquitto:1883
-  #   ports:
-  #     - "4000:4000"
-  #     - "4001:4001"
-  #   volumes:
-  #     - ../../server.key:/etc/certs/server.key
-  #     - ../../server.cert:/etc/certs/server.cert
+  listener-middleware:
+    build: ./listener-middleware
+    container_name: listener-middleware
+    depends_on:
+      - mosquitto
+    environment:
+      - MQTT_BROKER=mqtt://mosquitto:1883
+    expose:
+      - "4000"
+      - "4001"
+    networks:
+      - app-net
 
   graphhopper-import:
     image: israelhikingmap/graphhopper:latest
@@ -44,12 +78,14 @@ services:
       -o /data/graph-cache
       -c /data/config.yml
     restart: "no"
+    networks:
+      - app-net
 
   # graphhopper:
   #   image: israelhikingmap/graphhopper:latest
   #   container_name: graphhopper
-  #   ports:
-  #     - "8989:8989"
+  #   expose:
+  #     - "8989"
   #   environment:
   #     - JAVA_OPTS=-Xmx2g
   #   volumes:
@@ -58,17 +94,41 @@ services:
   #   command: --config /data/config.yml
   #   depends_on:
   #     - graphhopper-import
+  #   networks:
+  #     - app-net
 
-  # frontend:
-  #   build: ./app
-  #   container_name: frontend_app
-  #   ports:
-  #     - "8080:80"
-  #   restart: unless-stopped
+  frontend:
+    build: ./app
+    container_name: frontend_app
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - app-net
 
   # backend:
   #   build: ./server
   #   container_name: backend_server
-  #   ports:
-  #     - "5000:5000"
+  #   expose:
+  #     - "5000"
   #   restart: unless-stopped
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    # depends_on:
+    #   - frontend
+    #   - backend
+    #   - phpmyadmin
+    #   - mosquitto
+    networks:
+      - app-net
+
+volumes:
+  mysql_data:
+
+networks:
+  app-net:
+    driver: bridge
