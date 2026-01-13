@@ -22,6 +22,8 @@ services:
       MYSQL_PASSWORD: smart_cane_password
     expose:
       - "3306"
+    ports:
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
@@ -40,8 +42,8 @@ services:
       PMA_USER: root
       PMA_PASSWORD: rootpassword
       UPLOAD_LIMIT: 128M
-    expose:
-      - "80"
+    ports:
+      - "8080:80"
     networks:
       - app-net
 
@@ -54,18 +56,18 @@ services:
   #     - MQTT_BROKER=mqtt://mosquitto:1883
   #     - GH_URL=http://graphhopper:8989/route
 
-  listener-middleware:
-    build: ./listener-middleware
-    container_name: listener-middleware
-    depends_on:
-      - mosquitto
-    environment:
-      - MQTT_BROKER=mqtt://mosquitto:1883
-    expose:
-      - "4000"
-      - "4001"
-    networks:
-      - app-net
+  # listener-middleware:
+  #   build: ./listener-middleware
+  #   container_name: listener-middleware
+  #   depends_on:
+  #     - mosquitto
+  #   environment:
+  #     - MQTT_BROKER=mqtt://mosquitto:1883
+  #   expose:
+  #     - "4000"
+  #     - "4001"
+  #   networks:
+  #     - app-net
 
   graphhopper-import:
     image: israelhikingmap/graphhopper:latest
@@ -103,15 +105,27 @@ services:
     expose:
       - "80"
     restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - backend
     networks:
       - app-net
 
-  # backend:
-  #   build: ./server
-  #   container_name: backend_server
-  #   expose:
-  #     - "5000"
-  #   restart: unless-stopped
+  backend:
+    build: ./server
+    container_name: backend_server
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "5000"
+    depends_on:
+      - mysql
+      # - mosquitto
+    networks:
+      - app-net
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
