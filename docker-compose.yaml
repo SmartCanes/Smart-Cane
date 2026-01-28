@@ -56,18 +56,18 @@ services:
   #     - MQTT_BROKER=mqtt://mosquitto:1883
   #     - GH_URL=http://graphhopper:8989/route
 
-  # listener-middleware:
-  #   build: ./listener-middleware
-  #   container_name: listener-middleware
-  #   depends_on:
-  #     - mosquitto
-  #   environment:
-  #     - MQTT_BROKER=mqtt://mosquitto:1883
-  #   expose:
-  #     - "4000"
-  #     - "4001"
-  #   networks:
-  #     - app-net
+  listener-middleware:
+    build: ./listener-middleware
+    container_name: listener-middleware
+    depends_on:
+      - mosquitto
+    environment:
+      - MQTT_BROKER=mqtt://mosquitto:1883
+    expose:
+      - "4000"
+      - "4001"
+    networks:
+      - app-net
 
   graphhopper-import:
     image: israelhikingmap/graphhopper:latest

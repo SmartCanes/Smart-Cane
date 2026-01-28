@@ -8,22 +8,37 @@ import fs from "fs";
 
 dotenv.config();
 
+const app = express();
+
+app.use(express.json());
+app.use("/route", navigationRoute);
+
+let server;
+
 const PUBLIC_CERTIFICATE_KEY = process.env.PUBLIC_CERTIFICATE_KEY;
 const PRIVATE_CERTIFICATE_KEY = process.env.PRIVATE_CERTIFICATE_KEY;
 
-const options = {
-    key: fs.readFileSync(PRIVATE_CERTIFICATE_KEY),
-    cert: fs.readFileSync(PUBLIC_CERTIFICATE_KEY)
-};
+if (PUBLIC_CERTIFICATE_KEY && PRIVATE_CERTIFICATE_KEY) {
+    const options = {
+        key: fs.readFileSync(PRIVATE_CERTIFICATE_KEY),
+        cert: fs.readFileSync(PUBLIC_CERTIFICATE_KEY)
+    };
+    server = https.createServer(options, app);
+    console.log("Starting server in HTTPS mode");
+} else {
+    server = app.listen(process.env.PORT || 4000, () => {
+        console.log(`HTTP server running on port ${process.env.PORT || 4000}`);
+    });
+}
 
-const app = express();
-const server = https.createServer(options, app);
-initSocket(server);
+if (server instanceof https.Server) {
+    initSocket(server);
+}
 
-app.use(express.json());
-
-app.use("/route", navigationRoute);
-
-server.listen(process.env.PORT || 4000, () => console.log(`HTTP API on port ${process.env.PORT || 4000}`));
 initMqttWsBridge();
+
+if (server instanceof https.Server) {
+    const port = process.env.PORT || 4000;
+    server.listen(port, () => console.log(`⚡️ HTTPS server running on port ${port}`));
+}
 
