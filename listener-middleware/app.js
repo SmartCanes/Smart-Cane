@@ -3,12 +3,13 @@ import express from "express";
 import http from "http";
 import { setupSocketRoutes } from "./services/socketRoutes.js";
 import { initSocket } from "./services/socket.js";
-import bodyParser from "body-parser";
+import cors from "cors";
 
 dotenv.config();
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(cors());
 
 app.post("/send-note", (req, res) => {
     const { message } = req.body;
@@ -20,7 +21,7 @@ app.post("/send-note", (req, res) => {
     return res.json({ success: true, message: "Message sent to ESP32" });
 });
 
-const port = process.env.PORT || 4000;
+const port = process.env.PORT || 3000;
 const server = http.createServer(app);
 const io = initSocket(server);
 
