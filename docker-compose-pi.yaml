@@ -1,7 +1,23 @@
 services:
+  graphhopper-import:
+    image: israelhikingmap/graphhopper:latest
+    container_name: graphhopper_import
+    volumes:
+      - ./maps:/data
+    command: >
+      --import
+      -i /data/novaliches.osm.pbf
+      -o /data/graph-cache
+      -c /data/config.yml
+    restart: "no"
+    networks:
+      - app-net
+
   graphhopper:
     image: israelhikingmap/graphhopper:latest
     container_name: graphhopper
+    # expose:
+    #   - "8989"
     ports:
       - "8989:8989"
     environment:
@@ -12,14 +28,5 @@ services:
     command: --config /data/config.yml
     depends_on:
       - graphhopper-import
-  node-middleware:
-    build: ./middleware
-    container_name: node-middleware
-    depends_on:
-      - graphhopper
-    environment:
-      MQTT_URL: mqtt://cloud-mqtt-broker:1883
-      MQTT_USERNAME: username
-      MQTT_PASSWORD: password
-      GRAPHHOPPER_URL: http://graphhopper:8989
-    restart: unless-stopped
+    networks:
+      - app-net

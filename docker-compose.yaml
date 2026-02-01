@@ -1,18 +1,4 @@
 services:
-  # mosquitto:
-  #   image: eclipse-mosquitto:2
-  #   container_name: mqtt_broker
-  #   # expose:
-  #   #   - "9001"
-  #   ports:
-  #     - "9001:9001"
-  #   volumes:
-  #     - ./mosquitto/config:/mosquitto/config
-  #     - ./mosquitto/data:/mosquitto/data
-  #     - ./mosquitto/log:/mosquitto/log
-  #   networks:
-  #     - app-net
-
   mysql:
     image: mysql:8.0
     container_name: mysql
@@ -49,57 +35,15 @@ services:
     networks:
       - app-net
 
-  # route-middleware:
-  #   build: ./route-middleware
-  #   container_name: route-middleware
-  #   depends_on:
-  #     - mosquitto
-  #   environment:
-  #     - MQTT_BROKER=mqtt://mosquitto:1883
-  #     - GH_URL=http://graphhopper:8989/route
-
-  # listener-middleware:
-  #   build: ./listener-middleware
-  #   container_name: listener-middleware
-  #   depends_on:
-  #     - mosquitto
-  #   environment:
-  #     - MQTT_BROKER=mqtt://mosquitto:1883
-  #   expose:
-  #     - "4000"
-  #     - "4001"
-  #   networks:
-  #     - app-net
-
-  graphhopper-import:
-    image: israelhikingmap/graphhopper:latest
-    container_name: graphhopper_import
-    volumes:
-      - ./maps:/data
-    command: >
-      --import
-      -i /data/novaliches.osm.pbf
-      -o /data/graph-cache
-      -c /data/config.yml
-    restart: "no"
-    networks:
-      - app-net
-
-  graphhopper:
-    image: israelhikingmap/graphhopper:latest
-    container_name: graphhopper
-    # expose:
-    #   - "8989"
-    ports:
-      - "8989:8989"
-    environment:
-      - JAVA_OPTS=-Xmx2g
-    volumes:
-      - ./maps:/data
-    restart: unless-stopped
-    command: --config /data/config.yml
-    depends_on:
-      - graphhopper-import
+  middleware:
+    build: ./middleware
+    container_name: middleware
+    env_file:
+      - .env
+    expose:
+      - "3000"
+    # ports:
+    #   - "3000:3000"
     networks:
       - app-net
 
@@ -126,23 +70,21 @@ services:
   #     - "5000"
   #   depends_on:
   #     - mysql
-  #     # - mosquitto
   #   networks:
   #     - app-net
 
-  # cloudflared:
-  #   image: cloudflare/cloudflared:latest
-  #   container_name: cloudflared
-  #   command: tunnel run
-  #   environment:
-  #     - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-  #   # depends_on:
-  #   #   - frontend
-  #   #   - backend
-  #   #   - phpmyadmin
-  #   #   - mosquitto
-  #   networks:
-  #     - app-net
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    # depends_on:
+    #   - frontend
+    #   - backend
+    #   - phpmyadmin
+    networks:
+      - app-net
 
 volumes:
   mysql_data:
