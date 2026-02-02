@@ -2,5 +2,7 @@
 /maps/default-gh
 node_modules/
 .venv
+venv/
 .env
 server
+graph-cache/
