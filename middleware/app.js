@@ -1,10 +1,8 @@
 import dotenv from "dotenv";
 import express from "express";
 import http from "http";
-import { setupSocketRoutes } from "./services/socketRoutes.js";
-import { initSocket } from "./services/socket.js";
 import cors from "cors";
-import { setupBluetoothSocket } from "./services/bluetoothSocket.js";
+import { setupWS } from "./services/websocket.js";
 
 dotenv.config();
 
@@ -24,9 +22,8 @@ app.post("/send-note", (req, res) => {
 
 const port = process.env.PORT || 3000;
 const server = http.createServer(app);
-const io = initSocket(server);
+const io = setupWS(server);
 
-setupSocketRoutes(io);
 // setupBluetoothSocket(io);
 
 server.listen(port, '0.0.0.0', () => console.log(`Server running on port ${port}`));
