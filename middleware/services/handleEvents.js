@@ -1,11 +1,18 @@
 import axios from "axios";
 export const subscriptions = new Map(); // Map<serial, Set<ws>>
 export const wsToSerial = new Map(); // Map<ws, serial>
+export const serialToEsp = new Map(); // Map<serial, espWs>
 
 export async function handleEvent(ws, data) {
     const { event, serial, payload } = data;
 
     if (!serial) return;
+
+    if (event === "register") {
+        serialToEsp.set(serial, ws);
+        console.log(`ESP32 registered: ${serial}`);
+        return;
+    }
 
     if (event === "subscribe") {
         // --- Remove previous subscription if exists ---
@@ -38,18 +45,46 @@ export async function handleEvent(ws, data) {
         return;
     }
 
-    if (event === "location") {
+    if (event === "requestStatus") {
+        const espWs = serialToEsp.get(serial);
+        if (espWs && espWs.readyState === 1) {
+            espWs.send(JSON.stringify({ event: "requestStatus" }));
+            console.log(`Forwarding requestStatus to ESP32 ${serial}`);
+        } else {
+            const clients = subscriptions.get(serial);
+            if (clients) {
+                for (const client of clients) {
+                    client.send(
+                        JSON.stringify({
+                            event: "status",
+                            serial,
+                            payload: {
+                                status: "offline",
+                                emergency: false,
+                                gpsStatus: 0,
+                                ultrasonicStatus: false,
+                                infraredStatus: false,
+                                mpuStatus: false
+                            }
+                        })
+                    );
+                }
+            }
+        }
+        return;
+    }
+
+    if (event === "status" || event === "location") {
         const clients = subscriptions.get(serial);
         if (!clients) return;
 
         for (const client of clients) {
-            client.send(JSON.stringify({ event: "location", serial, payload }));
+            client.send(JSON.stringify({ event, serial, payload }));
         }
     }
 }
 
 export function cleanup(ws) {
-    // Remove ws from subscriptions map
     const serial = wsToSerial.get(ws);
     if (serial) {
         const set = subscriptions.get(serial);
@@ -58,6 +93,13 @@ export function cleanup(ws) {
             if (set.size === 0) subscriptions.delete(serial);
         }
         wsToSerial.delete(ws);
+    }
+
+    for (const [serial, espWs] of serialToEsp.entries()) {
+        if (espWs === ws) {
+            serialToEsp.delete(serial);
+            console.log(`[${new Date().toISOString()}] ESP32 disconnected: ${serial}`);
+        }
     }
 }
 
