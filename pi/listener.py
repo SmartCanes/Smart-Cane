@@ -15,6 +15,8 @@ PING_INTERVAL = 10
 
 ws = None
 
+last_location = None
+
 
 # ---------------- WS CONNECT ----------------
 
@@ -51,10 +53,10 @@ def get_route(frm, to):
         ]
 
         r = requests.get(GRAPHOPPER_URL, params=params, timeout=6)
-        print(r.url)
+
         r.raise_for_status()
 
-        return r.json()["paths"][0]["points"]["coordinates"]
+        return r.json()
 
     except Exception as e:
         print("[GraphHopper]", e)
@@ -84,6 +86,10 @@ def serial_loop():
 
                 # print("[Serial] Received:", data)
 
+                if data["event"] == "location":
+                    global last_location
+                    last_location = data["payload"]
+
                 # forward ESP32 payload directly to middleware
                 ws.send(
                     json.dumps(
@@ -100,9 +106,6 @@ def serial_loop():
             time.sleep(1)
 
 
-# ---------------- WS LISTENER ----------------
-
-
 def ws_listener():
     global ws
 
@@ -112,20 +115,30 @@ def ws_listener():
             data = json.loads(msg)
 
             if data["event"] == "requestRoute":
-                frm = data["payload"]["from"]
+
+                if not last_location:
+                    ws.send(
+                        json.dumps(
+                            {
+                                "event": "routeError",
+                                "serial": CANE_SERIAL,
+                                "payload": "No GPS fix yet",
+                            }
+                        )
+                    )
+                    continue
+
+                frm = (last_location["lat"], last_location["lng"])
                 to = data["payload"]["to"]
 
-                print("[Route] computing")
-
                 route = get_route(frm, to)
-                print(route)
 
                 ws.send(
                     json.dumps(
                         {
                             "event": "routeResponse",
                             "serial": CANE_SERIAL,
-                            "route": route,
+                            "payload": route,
                         }
                     )
                 )
@@ -168,8 +181,6 @@ def ping_loop():
 
         time.sleep(PING_INTERVAL)
 
-
-# ---------------- START ----------------
 
 connect_ws()
 

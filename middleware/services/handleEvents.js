@@ -81,7 +81,7 @@ export function handleEvent(ws, data) {
 
 
 
-    if (event === "status" || event === "location" || event === "piStatus") {
+    if (event === "status" || event === "location" || event === "piStatus" || event === "routeResponse") {
         const clients = subscriptions.get(serial);
         if (!clients) return;
 
@@ -95,7 +95,7 @@ export function handleEvent(ws, data) {
     // ---------- ROUTE REQUEST FROM FRONTEND ----------
 
     if (event === "requestRoute") {
-        if (!payload?.from || !payload?.to) return;
+        if (!payload?.to) return;
 
         const piWs = serialToPi.get(serial);
 
@@ -119,19 +119,6 @@ export function handleEvent(ws, data) {
         });
 
         console.log(`[Route] forwarded to Pi ${serial}`);
-        return;
-    }
-
-
-    // ---------- ROUTE RESPONSE FROM PI ----------
-
-    if (event === "routeResponse") {
-        const clients = subscriptions.get(serial);
-        if (!clients) return;
-
-        for (const c of clients)
-            safeSend(c, data);
-
         return;
     }
 }
