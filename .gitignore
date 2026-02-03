@@ -2,7 +2,10 @@
 /maps/default-gh
 node_modules/
 .venv
-venv/
+venv
 .env
 server
-graph-cache/
+/graph-cache
+/pi/graph-cache
+/pi/logs
+/pi/novaliches.osm-gh
