@@ -1,4 +1,5 @@
-from math import radians, sin, cos, asin, sqrt
+from math import atan2, radians, sin, cos, sqrt
+from speech import announce_upcoming_turn, speak
 
 INDEX = 0
 
@@ -9,32 +10,33 @@ def reset():
 
 
 def haversine(a, b):
+    R = 6371000
     lat1, lon1 = a
     lat2, lon2 = b
 
-    R = 6371000
+    φ1 = radians(lat1)
+    φ2 = radians(lat2)
+    Δφ = radians(lat2 - lat1)
+    Δλ = radians(lon2 - lon1)
 
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-
-    h = (
-        sin(dlat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-    )
-
-    return 2 * R * asin(sqrt(h))
+    s = sin(Δφ / 2) ** 2 + cos(φ1) * cos(φ2) * sin(Δλ / 2) ** 2
+    return 2 * R * atan2(sqrt(s), sqrt(1 - s))
 
 
-def update(position, turns, speak):
+def update(position, turns):
     global INDEX
 
     if not turns or INDEX >= len(turns):
         return
 
     wp = turns[INDEX]
-
     d = haversine(position, (wp["lat"], wp["lng"]))
 
+    if d <= 100 and d > 20:
+        announce_upcoming_turn(d, wp.get("instruction", wp.get("text", "")))
+
+        print(f"[Tracker] Approaching turn in {int(d)} meters: {wp.get('text', '')}")
+
     if d < 5:
-        speak(wp["text"])
+        speak(wp.get("instruction", wp.get("text", "")))
         INDEX += 1

@@ -7,15 +7,21 @@ import time
 import subprocess
 import threading
 import uuid
+from math import radians, cos, sin, sqrt, atan2
+
+from navigation.cache import get, store, set_active
+from navigation.turns import extract, ACTIVE_TURNS
+from navigation.tracker import update, reset, haversine  #
+from speech import (
+    announce_arrival,
+    announce_route_start,
+    process_route_for_speech,
+    speak,
+)
+
 route_lock = threading.Lock()
 active_route_id = None
 route_cancel_event = threading.Event()
-
-from math import radians, cos, sin, sqrt, atan2
-from navigation.cache import get, store, set_active
-from navigation.turns import extract, ACTIVE_TURNS
-from navigation.tracker import update, reset
-
 
 SERIAL_PORT = "/dev/ttyUSB0"
 SERIAL_BAUDRATE = 115200
@@ -27,16 +33,10 @@ WS_URL = "ws://localhost:3000"
 PING_INTERVAL = 10
 
 ws = None
-
 last_location = {"lat": 14.7226, "lng": 121.0336}
-
 DESTINATION_THRESHOLD_M = 10
 final_destination = None
 destination_reached = False
-
-route_lock = threading.Lock()
-active_route_id = None
-route_cancel_event = threading.Event()
 
 
 def connect_ws():
@@ -51,7 +51,7 @@ def connect_ws():
             ws.send(json.dumps({"event": "register", "serial": CANE_SERIAL}))
 
             print("[WS] Connected")
-            
+
             return
 
         except Exception as e:
@@ -69,9 +69,7 @@ def get_route(frm, to):
         ]
 
         r = requests.get(GRAPHOPPER_URL, params=params, timeout=6)
-
         r.raise_for_status()
-
         return r.json()
 
     except Exception as e:
@@ -80,6 +78,7 @@ def get_route(frm, to):
 
 
 def haversine_m(a, b):
+    """Calculate distance between two points in meters"""
     lat1, lon1 = a
     lat2, lon2 = b
 
@@ -104,7 +103,9 @@ def check_destination(lat, lng):
     dist = haversine_m((lat, lng), final_destination)
 
     if dist <= DESTINATION_THRESHOLD_M:
-        print(f"[ARRIVAL] Within {DESTINATION_THRESHOLD_M}m of destination (dist={dist}m)")
+        print(
+            f"[ARRIVAL] Within {DESTINATION_THRESHOLD_M}m of destination (dist={dist}m)"
+        )
         destination_reached = True
 
         print("[ARRIVAL] Destination reached")
@@ -112,6 +113,7 @@ def check_destination(lat, lng):
         # reset navigation state
         reset()
         set_active(None)
+        announce_arrival()
 
         # notify middleware
         try:
@@ -120,11 +122,10 @@ def check_destination(lat, lng):
             print("[ARRIVAL WS]", e)
 
 
-# ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1)
-
-
 def serial_loop():
     buffer = ""
+    # Uncomment when you have serial connection
+    # ser = serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1)
 
     while True:
         try:
@@ -139,26 +140,21 @@ def serial_loop():
 
                 data = json.loads(line)
 
-                # print("[Serial] Received:", data)
-
                 if data["event"] == "location":
                     global last_location
                     last_location = data["payload"]
-                    update(
-                        (last_location["lat"], last_location["lng"]),
-                        ACTIVE_TURNS,
-                        speak,
-                    )
+                    # Call tracker.update() without speak parameter
+                    update((last_location["lat"], last_location["lng"]), ACTIVE_TURNS)
                     check_destination(last_location["lat"], last_location["lng"])
 
                     ws.send(
-                      json.dumps(
-                          {
-                              "event": data["event"],
-                              "serial": CANE_SERIAL,
-                              "payload": data.get("payload"),
-                          }
-                      )
+                        json.dumps(
+                            {
+                                "event": data["event"],
+                                "serial": CANE_SERIAL,
+                                "payload": data.get("payload"),
+                            }
+                        )
                     )
 
         except Exception as e:
@@ -194,7 +190,6 @@ def ws_listener():
 
                 with route_lock:
                     route_cancel_event.set()
-
                     active_route_id = str(uuid.uuid4())
                     route_cancel_event.clear()
 
@@ -211,7 +206,6 @@ def ws_listener():
                 print(f"[Route] Request from {frm} to {to}")
 
                 cached = get(to)
-
                 if cached:
                     route = cached
                     print("[Route] Using cached route")
@@ -234,6 +228,14 @@ def ws_listener():
                     )
                 )
 
+                # Process route for speech instructions
+                spoken_instructions = process_route_for_speech(route)
+                if spoken_instructions and "paths" in route:
+                    path = route["paths"][0]
+                    distance_total = path.get("distance", 0)
+                    time_total = path.get("time", 0) / 1000  # Convert ms to seconds
+                    announce_route_start(distance_total, time_total)
+
                 coords = [
                     (lat, lon)
                     for lon, lat in route["paths"][0]["points"]["coordinates"]
@@ -246,8 +248,7 @@ def ws_listener():
                     daemon=True,
                 ).start()
 
-            if data["event"] == "clearDestination":
-
+            elif data["event"] == "clearDestination":
                 with route_lock:
                     route_cancel_event.set()
                     active_route_id = None
@@ -259,26 +260,22 @@ def ws_listener():
                 set_active(None)
                 ACTIVE_TURNS.clear()
 
-                ws.send(json.dumps({
-                    "event": "destinationCleared",
-                    "serial": CANE_SERIAL,
-                }))
+                ws.send(
+                    json.dumps(
+                        {
+                            "event": "destinationCleared",
+                            "serial": CANE_SERIAL,
+                        }
+                    )
+                )
 
                 print("[NAV] Destination cleared")
 
-            if data["event"] == "requestStatus":
+            elif data["event"] == "requestStatus":
                 try:
-                    ser.write(json.dumps({"event": "requestStatus"}).encode() + b"\n")
+                    # Uncomment when serial is connected
+                    # ser.write(json.dumps({"event": "requestStatus"}).encode() + b"\n")
                     print("[Serial] Sent requestStatus to ESP32")
-                    # ws.send(
-                    #     json.dumps(
-                    #         {
-                    #             "event": "piStatus",
-                    #             "serial": CANE_SERIAL,
-                    #             "payload": {"alive": True},
-                    #         }
-                    #     )
-                    # )
                 except Exception as e:
                     print("[Serial] Failed to send requestStatus:", e)
 
@@ -305,25 +302,9 @@ def ping_loop():
         time.sleep(PING_INTERVAL)
 
 
-import time
-from shapely.geometry import LineString
-
-
 def interpolate_coords(coords, step_m=2):
+    """Interpolate coordinates along the route"""
     from math import radians, cos, sin, sqrt, atan2
-
-    def haversine(a, b):
-        R = 6371000  
-        lat1, lon1 = a
-        lat2, lon2 = b
-
-        φ1 = radians(lat1)
-        φ2 = radians(lat2)
-        Δφ = radians(lat2 - lat1)
-        Δλ = radians(lon2 - lon1)
-
-        s = sin(Δφ / 2) ** 2 + cos(φ1) * cos(φ2) * sin(Δλ / 2) ** 2
-        return 2 * R * atan2(sqrt(s), sqrt(1 - s))
 
     interp = []
     for i in range(len(coords) - 1):
@@ -358,7 +339,7 @@ def simulate_walk(route_coords, route_id, interval=0.5):
         # mimic ESP32 GPS payload
         last_location = {"lat": lat, "lng": lng}
 
-        update((lat, lng), ACTIVE_TURNS, speak)
+        update((lat, lng), ACTIVE_TURNS)
 
         # check if arrived
         check_destination(lat, lng)
@@ -380,24 +361,23 @@ def simulate_walk(route_coords, route_id, interval=0.5):
         time.sleep(interval)
 
 
-def speak(text):
-    print(f"[SPEAK] {text}")
-    subprocess.Popen(["espeak", text])
-
-
+# Main execution
 connect_ws()
 
 # Initial location send
 ws.send(
-    json.dumps({
-        "event": "location",
-        "serial": CANE_SERIAL,
-        "payload": last_location,
-    })
+    json.dumps(
+        {
+            "event": "location",
+            "serial": CANE_SERIAL,
+            "payload": last_location,
+        }
+    )
 )
 print("[SIM] Initial location sent")
 
-# threading.Thread(target=serial_loop, daemon=True).start()
+# Start threads
+# threading.Thread(target=serial_loop, daemon=True).start()  # Uncomment when serial is connected
 threading.Thread(target=ws_listener, daemon=True).start()
 threading.Thread(target=ping_loop, daemon=True).start()
 
