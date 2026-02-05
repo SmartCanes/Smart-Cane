@@ -80,8 +80,15 @@ export function handleEvent(ws, data) {
     }
 
 
+    const FORWARDED_EVENTS = new Set([
+        "status",
+        "location",
+        "piStatus",
+        "routeResponse",
+        "destinationReached"
+    ]);
 
-    if (event === "status" || event === "location" || event === "piStatus" || event === "routeResponse") {
+    if (FORWARDED_EVENTS.has(event)) {
         const clients = subscriptions.get(serial);
         if (!clients) return;
 
