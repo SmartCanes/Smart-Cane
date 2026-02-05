@@ -85,7 +85,8 @@ export function handleEvent(ws, data) {
         "location",
         "piStatus",
         "routeResponse",
-        "destinationReached"
+        "destinationReached",
+        "destinationCleared"
     ]);
 
     if (FORWARDED_EVENTS.has(event)) {
@@ -128,6 +129,32 @@ export function handleEvent(ws, data) {
         console.log(`[Route] forwarded to Pi ${serial}`);
         return;
     }
+
+    if (event === "clearDestination") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "routeError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "clearDestination",
+            serial
+        });
+
+        console.log(`[NAV] clearDestination forwarded to Pi ${serial}`);
+        return;
+    }
+
 }
 
 export function cleanup(ws) {

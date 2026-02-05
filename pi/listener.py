@@ -5,6 +5,12 @@ import websocket
 import threading
 import time
 import subprocess
+import threading
+import uuid
+route_lock = threading.Lock()
+active_route_id = None
+route_cancel_event = threading.Event()
+
 from math import radians, cos, sin, sqrt, atan2
 from navigation.cache import get, store, set_active
 from navigation.turns import extract, ACTIVE_TURNS
@@ -16,7 +22,8 @@ SERIAL_BAUDRATE = 115200
 CANE_SERIAL = "SC-136901"
 
 GRAPHOPPER_URL = "http://localhost:8989/route"
-WS_URL = "wss://middleware.icane.org"
+# WS_URL = "wss://middleware.icane.org"
+WS_URL = "ws://localhost:3000"
 PING_INTERVAL = 10
 
 ws = None
@@ -26,6 +33,10 @@ last_location = {"lat": 14.7226, "lng": 121.0336}
 DESTINATION_THRESHOLD_M = 10
 final_destination = None
 destination_reached = False
+
+route_lock = threading.Lock()
+active_route_id = None
+route_cancel_event = threading.Event()
 
 
 def connect_ws():
@@ -164,6 +175,7 @@ def ws_listener():
             data = json.loads(msg)
 
             if data["event"] == "requestRoute":
+                global final_destination, destination_reached, active_route_id
 
                 print("[WS] Received route request")
 
@@ -180,10 +192,19 @@ def ws_listener():
                     )
                     continue
 
+                with route_lock:
+                    route_cancel_event.set()
+
+                    active_route_id = str(uuid.uuid4())
+                    route_cancel_event.clear()
+
+                    reset()
+                    set_active(None)
+                    ACTIVE_TURNS.clear()
+
                 frm = (last_location["lat"], last_location["lng"])
                 to = data["payload"]["to"]
 
-                global final_destination, destination_reached
                 final_destination = (to[0], to[1])
                 destination_reached = False
 
@@ -219,7 +240,31 @@ def ws_listener():
                 ]
 
                 smooth_coords = interpolate_coords(coords, step_m=8)
-                simulate_walk(smooth_coords, interval=0.2)
+                threading.Thread(
+                    target=simulate_walk,
+                    args=(smooth_coords, active_route_id, 0.5),
+                    daemon=True,
+                ).start()
+
+            if data["event"] == "clearDestination":
+
+                with route_lock:
+                    route_cancel_event.set()
+                    active_route_id = None
+
+                final_destination = None
+                destination_reached = False
+
+                reset()
+                set_active(None)
+                ACTIVE_TURNS.clear()
+
+                ws.send(json.dumps({
+                    "event": "destinationCleared",
+                    "serial": CANE_SERIAL,
+                }))
+
+                print("[NAV] Destination cleared")
 
             if data["event"] == "requestStatus":
                 try:
@@ -295,7 +340,7 @@ def interpolate_coords(coords, step_m=2):
     return interp
 
 
-def simulate_walk(route_coords, interval=0.5):
+def simulate_walk(route_coords, route_id, interval=0.5):
     global last_location, ws, destination_reached
 
     for lat, lng in route_coords:
@@ -303,6 +348,10 @@ def simulate_walk(route_coords, interval=0.5):
         if destination_reached:
             print("[SIM] Destination reached, stopping simulation")
             break
+
+        if route_cancel_event.is_set() or route_id != active_route_id:
+            print("[SIM] Route cancelled")
+            return
 
         print(f"[SIM] Moving to {lat}, {lng}")
 
