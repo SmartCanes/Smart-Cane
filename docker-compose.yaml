@@ -36,7 +36,7 @@ services:
       - app-net
 
   middleware:
-    build: ./middleware
+    build: ./middleware 
     container_name: middleware
     env_file:
       - .env
@@ -47,31 +47,31 @@ services:
     networks:
       - app-net
 
-  # frontend:
-  #   build: ./app
-  #   container_name: frontend_app
-  #   expose:
-  #     - "80"
-  #   restart: unless-stopped
-  #   env_file:
-  #     - .env
-  #   depends_on:
-  #     - backend
-  #   networks:
-  #     - app-net
+  frontend:
+    build: ./app
+    container_name: frontend_app
+    expose:
+      - "80"
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - app-net
 
-  # backend:
-  #   build: ./server
-  #   container_name: backend_server
-  #   restart: unless-stopped
-  #   env_file:
-  #     - .env
-  #   expose:
-  #     - "5000"
-  #   depends_on:
-  #     - mysql
-  #   networks:
-  #     - app-net
+  backend:
+    build: ./server
+    container_name: backend_server
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "5000"
+    depends_on:
+      - mysql
+    networks:
+      - app-net
 
   cloudflared:
     image: cloudflare/cloudflared:latest

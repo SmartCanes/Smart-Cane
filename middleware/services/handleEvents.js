@@ -14,6 +14,7 @@ function safeSend(ws, msg) {
 
 export function handleEvent(ws, data) {
     const { event, serial, payload } = data;
+
     if (!serial) return;
 
     if (event === "register") {
@@ -86,8 +87,14 @@ export function handleEvent(ws, data) {
         "piStatus",
         "routeResponse",
         "destinationReached",
-        "destinationCleared"
+        "destinationCleared",
+        "bluetoothDevices",
+        "pairStatus",
+        "unpairStatus",
+        "connectStatus",
+        "disconnectStatus"
     ]);
+
 
     if (FORWARDED_EVENTS.has(event)) {
         const clients = subscriptions.get(serial);
@@ -99,8 +106,6 @@ export function handleEvent(ws, data) {
         return;
     }
 
-
-    // ---------- ROUTE REQUEST FROM FRONTEND ----------
 
     if (event === "requestRoute") {
         if (!payload?.to) return;
@@ -130,6 +135,145 @@ export function handleEvent(ws, data) {
         return;
     }
 
+    if (event === "scanBluetooth") {
+
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "bluetoothError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "scanBluetooth",
+            serial,
+            payload: payload || {}
+        });
+
+        console.log(`[BT] scanBluetooth forwarded to Pi ${serial}`);
+        return;
+    }
+
+    if (event === "pairBluetooth") {
+        if (!payload?.mac) return;
+
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "bluetoothPairError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "pairBluetooth",
+            serial,
+            payload: { mac: payload.mac }
+        });
+
+        console.log(`[BT] pairBluetooth forwarded to Pi ${serial} for ${payload.mac}`);
+        return;
+    }
+
+    if (event === "unpairBluetooth") {
+        if (!payload?.mac) return;
+
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "bluetoothUnpairError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "unpairBluetooth",
+            serial,
+            payload: { mac: payload.mac }
+        });
+
+        console.log(`[BT] unpairBluetooth forwarded to Pi ${serial} for ${payload.mac}`);
+        return;
+    }
+
+    if (event === "connectBluetooth") {
+        if (!payload?.mac) return;
+
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "bluetoothConnectError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "connectBluetooth",
+            serial,
+            payload: { mac: payload.mac }
+        });
+
+        console.log(`[BT] connectBluetooth forwarded to Pi ${serial} for ${payload.mac}`);
+        return;
+    }
+
+    if (event === "disconnectBluetooth") {
+        if (!payload?.mac) return;
+
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "bluetoothDisconnectError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "disconnectBluetooth",
+            serial,
+            payload: { mac: payload.mac }
+        });
+
+        console.log(`[BT] disconnectBluetooth forwarded to Pi ${serial} for ${payload.mac}`);
+        return;
+    }
+
     if (event === "clearDestination") {
         const piWs = serialToPi.get(serial);
 
@@ -154,6 +298,32 @@ export function handleEvent(ws, data) {
         console.log(`[NAV] clearDestination forwarded to Pi ${serial}`);
         return;
     }
+
+    if (event === "note") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs) {
+            const clients = subscriptions.get(serial);
+            if (clients)
+                for (const c of clients)
+                    safeSend(c, {
+                        event: "noteError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "note",
+            serial,
+            payload
+        });
+
+        console.log(`[NOTE] sent to Pi ${serial}`);
+        return;
+    }
+
 
 }
 
