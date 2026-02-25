@@ -36,7 +36,7 @@ services:
       - app-net
 
   middleware:
-    build: ./middleware 
+    build: ./middleware
     container_name: middleware
     env_file:
       - .env
