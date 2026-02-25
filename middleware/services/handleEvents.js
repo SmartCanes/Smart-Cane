@@ -92,8 +92,11 @@ export function handleEvent(ws, data) {
         "pairStatus",
         "unpairStatus",
         "connectStatus",
-        "disconnectStatus"
+        "disconnectStatus",
+        "noteDelivered"
     ]);
+
+    console.log(`Received event "${event}" for serial "${serial}" with payload:`, payload);
 
 
     if (FORWARDED_EVENTS.has(event)) {
@@ -300,27 +303,37 @@ export function handleEvent(ws, data) {
     }
 
     if (event === "note") {
+        if (!payload?.message || !payload.message.trim()) {
+            safeSend(ws, {
+                event: "noteError",
+                serial,
+                payload: "Message cannot be empty"
+            });
+            return;
+        }
+
         const piWs = serialToPi.get(serial);
 
-        if (!piWs) {
-            const clients = subscriptions.get(serial);
-            if (clients)
-                for (const c of clients)
-                    safeSend(c, {
-                        event: "noteError",
-                        serial,
-                        payload: "Pi offline"
-                    });
+        if (!piWs || piWs.readyState !== 1) {
+            safeSend(ws, {
+                event: "noteError",
+                serial,
+                payload: "Pi offline"
+            });
             return;
         }
 
         safeSend(piWs, {
             event: "note",
             serial,
-            payload
+            payload: {
+                message: payload.message.trim(),
+                timestamp: Date.now()
+            }
         });
 
-        console.log(`[NOTE] sent to Pi ${serial}`);
+        console.log(`[NOTE] forwarded to Pi ${serial}`);
+
         return;
     }
 
