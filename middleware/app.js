@@ -1,11 +1,11 @@
 import dotenv from "dotenv";
+dotenv.config();
 import express from "express";
 import http from "http";
 import cors from "cors";
 import { setupWS } from "./services/websocket.js";
 import { handleEvent } from "./services/handleEvents.js";
 
-dotenv.config();
 
 const app = express();
 app.use(express.json());
