@@ -38,6 +38,7 @@ services:
   middleware:
     build: ./middleware
     container_name: middleware
+    restart: unless-stopped
     env_file:
       - .env
     expose:
@@ -76,6 +77,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
+    restart: unless-stopped
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
