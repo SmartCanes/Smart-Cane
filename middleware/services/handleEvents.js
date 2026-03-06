@@ -4,23 +4,8 @@ export const subscriptions = new Map();   // serial -> Set<clientWs>
 export const wsToSerial = new Map();      // clientWs -> serial
 export const serialToPi = new Map();      // serial -> piWs
 
-// const fallbackConfig = {
-//     fallAngleThreshold: 10.0,
-//     fallConfirmationDelay: 3000,
-//     obstacleDistanceThreshold: 100.0,
-//     pointDownAngle: 30.0,
-//     edgeBeepMin: 400,
-//     edgeBeepMax: 708,
-//     edgeContinuous: 709,
-//     volumeLevel: 0.3,
-//     speechSpeed: 150,
-//     speakingVoice: "f5",
-
-//     enableFallDetection: true,
-//     enableEdgeDetection: true,
-//     enableObstacleDetection: true,
-//     enableGPS: true
-// };
+export const guardianSockets = new Map();
+export const wsToGuardian = new Map();
 
 const fallbackConfig = {
     FALL_DETECTION: {
@@ -72,6 +57,41 @@ const fallbackConfig = {
         }
     }
 };
+function broadcastToAllSubscribers(message) {
+    for (const clients of subscriptions.values()) {
+        for (const ws of clients) {
+            safeSend(ws, message);
+        }
+    }
+}
+
+function broadcastGuardianPresence(guardianId, status) {
+    broadcastToAllSubscribers({
+        event: "guardianPresence",
+        payload: {
+            guardianId,
+            status
+        }
+    });
+}
+
+function removeGuardianSocket(ws) {
+    const guardianId = wsToGuardian.get(ws);
+    if (!guardianId) return;
+
+    const sockets = guardianSockets.get(guardianId);
+    if (sockets) {
+        sockets.delete(ws);
+
+        if (sockets.size === 0) {
+            guardianSockets.delete(guardianId);
+            broadcastGuardianPresence(guardianId, false);
+            console.log(`[Presence] Guardian ${guardianId} offline`);
+        }
+    }
+
+    wsToGuardian.delete(ws);
+}
 
 function safeSend(ws, msg) {
     if (!ws || ws.readyState !== 1) return;
@@ -86,7 +106,42 @@ function safeSend(ws, msg) {
 export async function handleEvent(ws, data) {
     const { event, serial, payload } = data;
 
+    if (event === "guardian:join") {
+        const { guardianId } = payload || {};
+
+        if (!guardianId) return;
+
+        if (!guardianSockets.has(guardianId)) {
+            guardianSockets.set(guardianId, new Set());
+        }
+
+        const sockets = guardianSockets.get(guardianId);
+        const wasOffline = sockets.size === 0;
+
+        sockets.add(ws);
+        wsToGuardian.set(ws, guardianId);
+
+        if (wasOffline) {
+            broadcastGuardianPresence(guardianId, true);
+            console.log(`[Presence] Guardian ${guardianId} online`);
+        }
+
+        return;
+    }
+
+    if (event === "requestGuardianPresence") {
+        safeSend(ws, {
+            event: "guardianPresenceSnapshot",
+            payload: {
+                onlineGuardianIds: [...guardianSockets.keys()].map(Number)
+            }
+        });
+        return;
+    }
+
     if (!serial) return;
+
+
 
     if (event === "register") {
 
@@ -504,7 +559,6 @@ export async function handleEvent(ws, data) {
 }
 
 export function cleanup(ws) {
-
     const serial = wsToSerial.get(ws);
     if (serial) {
         const set = subscriptions.get(serial);
@@ -514,6 +568,8 @@ export function cleanup(ws) {
         }
         wsToSerial.delete(ws);
     }
+
+    removeGuardianSocket(ws);
 
     for (const [s, piWs] of serialToPi.entries()) {
         if (piWs === ws) {
