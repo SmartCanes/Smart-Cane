@@ -230,7 +230,7 @@ export async function handleEvent(ws, data) {
 
     const FORWARDED_EVENTS = new Set([
         "status",
-        "location",
+        "gps",
         "piStatus",
         "routeResponse",
         "destinationReached",
@@ -240,11 +240,9 @@ export async function handleEvent(ws, data) {
         "unpairStatus",
         "connectStatus",
         "disconnectStatus",
-        "noteDelivered"
+        "noteDelivered",
+        "demoModeUpdated"
     ]);
-
-    console.log(`Received event "${event}" for serial "${serial}" with payload:`, payload);
-
 
     if (FORWARDED_EVENTS.has(event)) {
         const clients = subscriptions.get(serial);
@@ -552,6 +550,42 @@ export async function handleEvent(ws, data) {
             console.error(`Failed to update config for ${serial}:`, e.message);
         }
 
+        return;
+    }
+
+    if(event === "updateDemoMode") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients) {
+                for (const c of clients) {
+                    safeSend(c, {
+                        event: "demoModeError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+                }
+            }
+            return;
+        }
+
+        const enabled = payload?.enabled === true;
+
+        console.log("[DEMO] incoming payload =", payload);
+        console.log("[DEMO] parsed enabled =", enabled);
+
+        safeSend(piWs, {
+            event: "updateDemoMode",
+            serial,
+            payload: {
+                enabled
+            }
+        });
+
+        console.log(
+            `[DEMO] updateDemoMode forwarded to Pi ${serial}: ${enabled}`
+        );
         return;
     }
 
