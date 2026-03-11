@@ -241,7 +241,8 @@ export async function handleEvent(ws, data) {
         "connectStatus",
         "disconnectStatus",
         "noteDelivered",
-        "demoModeUpdated"
+        "demoModeUpdated",
+        "scanStatus"
     ]);
 
     if (FORWARDED_EVENTS.has(event)) {
@@ -307,6 +308,38 @@ export async function handleEvent(ws, data) {
         });
 
         console.log(`[BT] scanBluetooth forwarded to Pi ${serial}`);
+        return;
+    }
+
+    if (event === "getBluetoothState") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients) {
+                for (const c of clients) {
+                    safeSend(c, {
+                        event: "bluetoothDevices",
+                        serial,
+                        payload: {
+                            devices: [],
+                            status: "error",
+                            error: "Pi offline"
+                        }
+                    });
+                }
+            }
+
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "getBluetoothState",
+            serial,
+            payload: payload || {}
+        });
+
+        console.log(`[BT] getBluetoothState forwarded to Pi ${serial}`);
         return;
     }
 
@@ -553,7 +586,7 @@ export async function handleEvent(ws, data) {
         return;
     }
 
-    if(event === "updateDemoMode") {
+    if (event === "updateDemoMode") {
         const piWs = serialToPi.get(serial);
 
         if (!piWs || piWs.readyState !== 1) {
@@ -588,8 +621,6 @@ export async function handleEvent(ws, data) {
         );
         return;
     }
-
-
 }
 
 export function cleanup(ws) {
