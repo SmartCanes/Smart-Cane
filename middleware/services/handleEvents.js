@@ -11,7 +11,6 @@ const fallbackConfig = {
     FALL_DETECTION: {
         config: {
             enabled: true,
-            fallAngleThreshold: 10.0,
             fallConfirmationDelay: 3000
         }
     },
@@ -20,17 +19,14 @@ const fallbackConfig = {
         config: {
             enabled: true,
             obstacleDistanceThreshold: 100.0,
-            measurementInterval: 1000,
+            measurementInterval: 1000
         }
     },
 
     EDGE_DETECTION: {
         config: {
             enabled: true,
-            edgeBeepMin: 400,
-            edgeBeepMax: 708,
-            edgeContinuous: 709,
-            pointDownAngle: 30.0
+            edgeBeepMin: 400
         }
     },
 
@@ -38,8 +34,7 @@ const fallbackConfig = {
         config: {
             enabled: true,
             volume: 0.3,
-            speechSpeed: 150,
-            voiceType: "en-f5"
+            speechSpeed: 150
         }
     },
 
@@ -47,7 +42,7 @@ const fallbackConfig = {
         config: {
             enabled: true,
             alertType: "COMBINED",
-            recognitionInterval: 3000,
+            recognitionInterval: 3000
         }
     },
 
@@ -57,6 +52,7 @@ const fallbackConfig = {
         }
     }
 };
+
 function broadcastToAllSubscribers(message) {
     for (const clients of subscriptions.values()) {
         for (const ws of clients) {
@@ -163,6 +159,11 @@ export async function handleEvent(ws, data) {
                 payload: finalConfig
             });
 
+            safeSend(ws, {
+                event: "requestStatus",
+                serial
+            });
+
         } catch (e) {
             console.error(`Failed to fetch config for ${serial}:`, e.message);
         }
@@ -213,12 +214,13 @@ export async function handleEvent(ws, data) {
                         event: "status",
                         serial,
                         payload: {
-                            status: "offline",
+                            raspberryPiStatus: "offline",
+                            esp32Status: "offline",
                             emergency: false,
                             gpsStatus: 0,
-                            ultrasonicStatus: false,
-                            infraredStatus: false,
-                            mpuStatus: false
+                            obstacleDetectionStatus: false,
+                            edgeDetectionStatus: false,
+                            accelerometerStatus: false
                         }
                     });
                 }
@@ -554,7 +556,7 @@ export async function handleEvent(ws, data) {
         try {
             // const result = await updateDeviceConfig(serial, payload);
 
-            console.log(result)
+            // console.log(result)
             // console.log(`[CONFIG] updated in database for ${serial}`);
 
             const piWs = serialToPi.get(serial);
@@ -640,6 +642,46 @@ export function cleanup(ws) {
         if (piWs === ws) {
             serialToPi.delete(s);
             console.log(`[WS] Pi disconnected: ${s}`);
+
+            const clients = subscriptions.get(s);
+            if (clients) {
+                for (const client of clients) {
+                    safeSend(client, {
+                        event: "status",
+                        serial: s,
+                        payload: {
+                            esp32Status: "offline",
+                            emergency: false,
+                            fall: false,
+                            obstacleDetectionStatus: false,
+                            edgeDetectionStatus: false,
+                            accelerometerStatus: false
+                        }
+                    });
+
+                    safeSend(client, {
+                        event: "piStatus",
+                        serial: s,
+                        payload: {
+                            status: "offline"
+                        }
+                    });
+
+                    safeSend(client, {
+                        event: "gps",
+                        serial: s,
+                        payload: {
+                            status: 0,
+                            sats: 0,
+                            fix: false,
+                            hdop: null,
+                            ready: false,
+                            lat: null,
+                            lng: null
+                        }
+                    });
+                }
+            }
         }
     }
 }
