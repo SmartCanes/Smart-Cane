@@ -18,15 +18,14 @@ const fallbackConfig = {
     OBSTACLE_DETECTION: {
         config: {
             enabled: true,
-            obstacleDistanceThreshold: 100.0,
-            measurementInterval: 1000
+            obstacleDistanceThreshold: 300.0,
         }
     },
 
     EDGE_DETECTION: {
         config: {
             enabled: true,
-            edgeBeepMin: 400
+            edgeBeepMin: 300
         }
     },
 
@@ -41,7 +40,6 @@ const fallbackConfig = {
     VISUAL_RECOGNITION: {
         config: {
             enabled: true,
-            alertType: "COMBINED",
             recognitionInterval: 3000
         }
     },
@@ -147,14 +145,14 @@ export async function handleEvent(ws, data) {
 
         try {
             let configRecord = await getDeviceConfig(serial);
-
+            
             const finalConfig =
                 configRecord && configRecord.config_json
                     ? configRecord.config_json
                     : fallbackConfig;
 
             safeSend(ws, {
-                event: "updateDeviceState",
+                event: "updateDeviceConfig",
                 serial,
                 payload: finalConfig
             });
