@@ -244,7 +244,8 @@ export async function handleEvent(ws, data) {
         "disconnectStatus",
         "noteDelivered",
         "demoModeUpdated",
-        "scanStatus"
+        "scanStatus",
+        "configSaved"
     ]);
 
     if (FORWARDED_EVENTS.has(event)) {
@@ -530,8 +531,6 @@ export async function handleEvent(ws, data) {
                 return;
             }
 
-            console.log(devices.config_json);
-
             safeSend(ws, {
                 event: "deviceConfig",
                 payload: devices.config_json
@@ -554,11 +553,7 @@ export async function handleEvent(ws, data) {
         if (!payload) return;
 
         try {
-            // const result = await updateDeviceConfig(serial, payload);
-
-            // console.log(result)
-            // console.log(`[CONFIG] updated in database for ${serial}`);
-
+            await updateDeviceConfig(serial, payload);
             const piWs = serialToPi.get(serial);
 
             if (piWs && piWs.readyState === 1) {
@@ -569,17 +564,17 @@ export async function handleEvent(ws, data) {
                 });
             }
 
-            const clients = subscriptions.get(serial);
+            // const clients = subscriptions.get(serial);
 
-            if (clients) {
-                for (const client of clients) {
-                    safeSend(client, {
-                        event: "deviceConfigUpdated",
-                        serial,
-                        payload
-                    });
-                }
-            }
+            // if (clients) {
+            //     for (const client of clients) {
+            //         safeSend(client, {
+            //             event: "deviceConfigUpdated",
+            //             serial,
+            //             payload
+            //         });
+            //     }
+            // }
 
         } catch (e) {
             console.error(`Failed to update config for ${serial}:`, e.message);
