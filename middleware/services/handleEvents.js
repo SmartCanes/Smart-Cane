@@ -96,6 +96,27 @@ function removeGuardianSocket(ws) {
     wsToGuardian.delete(ws);
 }
 
+async function sendDeviceConfig(ws, serial) {
+    try {
+        const configRecord = await getDeviceConfig(serial);
+        const finalConfig = configRecord?.config_json || fallbackConfig;
+
+        safeSend(ws, {
+            event: "deviceConfig",
+            serial,
+            payload: finalConfig
+        });
+    } catch (e) {
+        console.error(`Failed to fetch config for ${serial}:`, e.message);
+
+        safeSend(ws, {
+            event: "deviceConfig",
+            serial,
+            payload: fallbackConfig
+        });
+    }
+}
+
 function safeSend(ws, msg) {
     if (!ws || ws.readyState !== 1) return;
 
@@ -180,19 +201,24 @@ export async function handleEvent(ws, data) {
 
     if (event === "subscribe") {
         const oldSerial = wsToSerial.get(ws);
+
         if (oldSerial && oldSerial !== serial) {
             const oldSet = subscriptions.get(oldSerial);
             if (oldSet) {
                 oldSet.delete(ws);
                 if (oldSet.size === 0) subscriptions.delete(oldSerial);
             }
+
             const clientIP = ws._socket?.remoteAddress || "unknown";
             console.log(
                 `[${new Date().toISOString()}] [WS] Client ${clientIP} switched from serial "${oldSerial}" to "${serial}"`
             );
         }
 
-        if (!subscriptions.has(serial)) subscriptions.set(serial, new Set());
+        if (!subscriptions.has(serial)) {
+            subscriptions.set(serial, new Set());
+        }
+
         subscriptions.get(serial).add(ws);
         wsToSerial.set(ws, serial);
 
@@ -204,6 +230,9 @@ export async function handleEvent(ws, data) {
         );
 
         safeSend(ws, { event: "subscribed", serial });
+        await sendDeviceConfig(ws, serial);
+
+
         return;
     }
 
@@ -526,32 +555,7 @@ export async function handleEvent(ws, data) {
     }
 
     if (event === "requestDeviceConfig") {
-        try {
-            const devices = await getDeviceConfig(serial);
-
-            if (!devices) {
-                safeSend(ws, {
-                    event: "deviceConfig",
-                    payload: fallbackConfig
-                });
-
-                return;
-            }
-
-            safeSend(ws, {
-                event: "deviceConfig",
-                payload: devices.config_json
-            });
-
-        } catch (e) {
-            console.error("Failed to send device config:", e.message);
-
-            safeSend(ws, {
-                event: "deviceConfigError",
-                message: "Failed to fetch device config"
-            });
-        }
-
+        await sendDeviceConfig(ws, serial);
         return;
     }
 
