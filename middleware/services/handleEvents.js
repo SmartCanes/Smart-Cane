@@ -9,43 +9,44 @@ export const wsToGuardian = new Map();
 
 const fallbackConfig = {
     FALL_DETECTION: {
+        enabled: true,
         config: {
-            enabled: true,
             fallConfirmationDelay: 3000
         }
     },
 
     OBSTACLE_DETECTION: {
+        enabled: true,
         config: {
-            enabled: true,
             obstacleDistanceThreshold: 300.0,
             obstacleFeedbackPattern: 0
         }
     },
 
     EDGE_DETECTION: {
+        enabled: true,
         config: {
-            enabled: true,
             stairSafetyDistance: 300
         }
     },
 
     VOICE_ENGINE: {
+        enabled: true,
         config: {
-            enabled: true,
             volume: 0.3,
             speechSpeed: 150
         }
     },
 
     VISUAL_RECOGNITION: {
+        enabled: true,
         config: {
-            enabled: true,
             recognitionInterval: 3000
         }
     },
 
     EMERGENCY_SYSTEM: {
+        enabled: true,
         config: {
             emergencyTrigger: 3000,
             emergencyBuzzerDuration: 60000,
@@ -54,11 +55,51 @@ const fallbackConfig = {
     },
 
     GPS_TRACKING: {
+        enabled: true,
         config: {
-            enabled: true
         }
     }
 };
+
+function mergeDeviceConfig(existing = {}, partial = {}) {
+    const result = { ...existing };
+
+    for (const [key, value] of Object.entries(partial)) {
+        if (
+            value &&
+            typeof value === "object" &&
+            !Array.isArray(value) &&
+            result[key] &&
+            typeof result[key] === "object" &&
+            !Array.isArray(result[key])
+        ) {
+            result[key] = mergeDeviceConfig(result[key], value);
+        } else {
+            result[key] = value;
+        }
+    }
+
+    return result;
+}
+
+function mapSnapshotArrayToStoredConfig(payload) {
+    const components = payload?.components || [];
+    const mapped = {};
+
+    for (const component of components) {
+        const codeName = component?.codeName;
+        if (!codeName) continue;
+
+        mapped[codeName] = {
+            enabled: component?.enabled ?? true,
+            config: {
+                ...(component?.config || {})
+            }
+        };
+    }
+
+    return mapped;
+}
 
 function broadcastToAllSubscribers(message) {
     for (const clients of subscriptions.values()) {
@@ -232,7 +273,6 @@ export async function handleEvent(ws, data) {
         safeSend(ws, { event: "subscribed", serial });
         await sendDeviceConfig(ws, serial);
 
-
         return;
     }
 
@@ -281,7 +321,8 @@ export async function handleEvent(ws, data) {
         "noteDelivered",
         "demoModeUpdated",
         "scanStatus",
-        "configSaved"
+        "configSaved",
+        "piConfigUpdated"
     ]);
 
     if (FORWARDED_EVENTS.has(event)) {
@@ -560,11 +601,18 @@ export async function handleEvent(ws, data) {
     }
 
     if (event === "updateDeviceConfig") {
-
-        if (!payload) return;
+        if (!payload?.components || !Array.isArray(payload.components)) return;
 
         try {
-            await updateDeviceConfig(serial, payload);
+            const configRecord = await getDeviceConfig(serial);
+            const currentConfig = configRecord?.config_json || fallbackConfig;
+
+            const incomingDeviceConfig = mapSnapshotArrayToStoredConfig(payload);
+            const mergedConfig = mergeDeviceConfig(currentConfig, incomingDeviceConfig);
+
+            await updateDeviceConfig(serial, mergedConfig);
+            console.log(payload);
+
             const piWs = serialToPi.get(serial);
 
             if (piWs && piWs.readyState === 1) {
@@ -573,22 +621,62 @@ export async function handleEvent(ws, data) {
                     serial,
                     payload
                 });
+            } else {
+                safeSend(ws, {
+                    event: "configError",
+                    serial,
+                    payload: "Pi offline"
+                });
+            }
+        } catch (e) {
+            console.error(`Failed to update device config for ${serial}:`, e.message);
+
+            safeSend(ws, {
+                event: "configError",
+                serial,
+                payload: "Failed to update device config"
+            });
+        }
+
+        return;
+    }
+
+    if (event === "updatePiConfig") {
+        if (!payload?.components || !Array.isArray(payload.components)) return;
+
+        try {
+            const configRecord = await getDeviceConfig(serial);
+            const currentConfig = configRecord?.config_json || fallbackConfig;
+
+            const incomingPiConfig = mapSnapshotArrayToStoredConfig(payload);
+            const mergedConfig = mergeDeviceConfig(currentConfig, incomingPiConfig);
+
+            await updateDeviceConfig(serial, mergedConfig);
+
+            const piWs = serialToPi.get(serial);
+
+            if (!piWs || piWs.readyState !== 1) {
+                safeSend(ws, {
+                    event: "piConfigError",
+                    serial,
+                    payload: "Pi offline"
+                });
+                return;
             }
 
-            // const clients = subscriptions.get(serial);
-
-            // if (clients) {
-            //     for (const client of clients) {
-            //         safeSend(client, {
-            //             event: "deviceConfigUpdated",
-            //             serial,
-            //             payload
-            //         });
-            //     }
-            // }
-
+            safeSend(piWs, {
+                event: "updatePiConfig",
+                serial,
+                payload
+            });
         } catch (e) {
-            console.error(`Failed to update config for ${serial}:`, e.message);
+            console.error(`Failed to update Pi config for ${serial}:`, e.message);
+
+            safeSend(ws, {
+                event: "piConfigError",
+                serial,
+                payload: "Failed to update Pi config"
+            });
         }
 
         return;
