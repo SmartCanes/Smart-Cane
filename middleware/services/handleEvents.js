@@ -19,13 +19,14 @@ const fallbackConfig = {
         config: {
             enabled: true,
             obstacleDistanceThreshold: 300.0,
+            obstacleFeedbackPattern: 0
         }
     },
 
     EDGE_DETECTION: {
         config: {
             enabled: true,
-            edgeBeepMin: 300
+            stairSafetyDistance: 300
         }
     },
 
@@ -46,9 +47,9 @@ const fallbackConfig = {
 
     EMERGENCY_SYSTEM: {
         config: {
-            emergencyDelay: 3000,
+            emergencyTrigger: 3000,
             emergencyBuzzerDuration: 60000,
-            emergencyBuzzerInterval: 100
+            emergencyBuzzerPattern: 100
         }
     },
 
