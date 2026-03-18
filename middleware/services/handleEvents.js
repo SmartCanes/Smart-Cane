@@ -1,4 +1,4 @@
-import { getDeviceConfig, updateDeviceConfig } from "../db/database.js";
+import { getDeviceConfig, saveIncidentLog, updateDeviceConfig } from "../db/database.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
 export const wsToSerial = new Map();      // clientWs -> serial
@@ -60,6 +60,69 @@ const fallbackConfig = {
         }
     }
 };
+
+function buildIncidentMessage(type, serial, payload) {
+    const lat = payload?.lat;
+    const lng = payload?.lng;
+    const source = payload?.source ?? "unknown";
+    const timestamp = payload?.timestamp ?? Date.now();
+
+    const locationText =
+        typeof lat === "number" && typeof lng === "number"
+            ? `Location: https://maps.google.com/?q=${lat},${lng}`
+            : "Location: unavailable";
+
+    switch (type) {
+        case "emergencyTriggered":
+            return {
+                title: "Emergency Alert",
+                message:
+                    `Emergency button activated for cane ${serial}.\n` +
+                    `Source: ${source}\n` +
+                    `${locationText}\n` +
+                    `Timestamp: ${timestamp}`
+            };
+
+        case "fallDetected":
+            return {
+                title: "Fall Alert",
+                message:
+                    `Possible fall detected for cane ${serial}.\n` +
+                    `Source: ${source}\n` +
+                    `${locationText}\n` +
+                    `Timestamp: ${timestamp}`
+            };
+
+        default:
+            return null;
+    }
+}
+
+async function triggerMessagingApi(type, serial, payload) {
+    try {
+        const incident = buildIncidentMessage(type, serial, payload);
+
+        if (!incident) {
+            return;
+        }
+
+        await fetch("https://your-messaging-service/api/incidents", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                type,
+                serial,
+                title: incident.title,
+                message: incident.message,
+                payload
+            })
+        });
+    } catch (err) {
+        console.error(`[MessagingAPI] Failed for ${type} ${serial}:`, err.message);
+    }
+}
 
 function mergeDeviceConfig(existing = {}, partial = {}) {
     const result = { ...existing };
@@ -322,8 +385,19 @@ export async function handleEvent(ws, data) {
         "demoModeUpdated",
         "scanStatus",
         "configSaved",
-        "piConfigUpdated"
+        "piConfigUpdated",
+        "emergencyTriggered",
+        "emergencyStopped",
+        "fallDetected",
+        "fallCleared"
     ]);
+
+    if (event === "emergencyTriggered" || event === "fallDetected") {
+        console.log(event, serial, payload);
+        await saveIncidentLog(event, serial, payload);
+        await triggerMessagingApi(event, serial, payload);
+    }
+
 
     if (FORWARDED_EVENTS.has(event)) {
         const clients = subscriptions.get(serial);
