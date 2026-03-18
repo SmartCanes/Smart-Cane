@@ -44,6 +44,14 @@ const fallbackConfig = {
         }
     },
 
+    EMERGENCY_SYSTEM: {
+        config: {
+            emergencyDelay: 3000,
+            emergencyBuzzerDuration: 60000,
+            emergencyBuzzerInterval: 100
+        }
+    },
+
     GPS_TRACKING: {
         config: {
             enabled: true
@@ -145,7 +153,7 @@ export async function handleEvent(ws, data) {
 
         try {
             let configRecord = await getDeviceConfig(serial);
-            
+
             const finalConfig =
                 configRecord && configRecord.config_json
                     ? configRecord.config_json
