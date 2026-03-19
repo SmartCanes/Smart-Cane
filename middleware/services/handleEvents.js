@@ -1,4 +1,5 @@
 import { getDeviceConfig, saveIncidentLog, updateDeviceConfig } from "../db/database.js";
+import { sendIncidentPushNotifications } from "./pushService.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
 export const wsToSerial = new Map();      // clientWs -> serial
@@ -396,6 +397,11 @@ export async function handleEvent(ws, data) {
         console.log(event, serial, payload);
         await saveIncidentLog(event, serial, payload);
         await triggerMessagingApi(event, serial, payload);
+        await sendIncidentPushNotifications({
+            event,
+            serial,
+            payload
+        });
     }
 
 

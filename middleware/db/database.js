@@ -137,3 +137,57 @@ export async function saveIncidentLog(type, serial, payload) {
         return null;
     }
 }
+
+const toRows = (result) => {
+    if (Array.isArray(result)) return result[0] || [];
+    if (result?.rows) return result.rows;
+    return result || [];
+};
+
+export const getPushSubscriptionsByGuardianOrSerial = async (guardianOrSerial) => {
+    if (!guardianOrSerial) return [];
+
+    const sql = `
+        SELECT endpoint, p256dh, auth, guardian_id AS guardianId, serial
+        FROM push_subscriptions
+        WHERE serial = ? OR guardian_id = ?
+    `;
+
+    const result = await db.query(sql, [guardianOrSerial, guardianOrSerial]);
+    return toRows(result);
+};
+
+export const deletePushSubscriptionByEndpoint = async (endpoint) => {
+    if (!endpoint) return;
+
+    const sql = `
+        DELETE FROM push_subscriptions
+        WHERE endpoint = ?
+    `;
+
+    await db.query(sql, [endpoint]);
+};
+
+export const upsertPushSubscription = async ({
+    endpoint,
+    p256dh,
+    auth,
+    guardianId = null,
+    serial = null
+}) => {
+    if (!endpoint || !p256dh || !auth) {
+        throw new Error("endpoint, p256dh and auth are required");
+    }
+
+    const sql = `
+        INSERT INTO push_subscriptions (endpoint, p256dh, auth, guardian_id, serial)
+        VALUES (?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            p256dh = VALUES(p256dh),
+            auth = VALUES(auth),
+            guardian_id = VALUES(guardian_id),
+            serial = VALUES(serial)
+    `;
+
+    await db.query(sql, [endpoint, p256dh, auth, guardianId, serial]);
+};
