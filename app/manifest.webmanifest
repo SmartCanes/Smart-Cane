@@ -1,0 +1,16 @@
+{
+  "name": "iCane",
+  "short_name": "iCane",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#11285A",
+  "theme_color": "#11285A",
+  "icons": [
+    {
+      "src": "/icane.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

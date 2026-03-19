@@ -1,4 +1,72 @@
+import axios from "axios";
 import pool from "./dbClient.js";
+
+const REVERSE_GEOCODE_URL = "https://reverse.icane.org/reverse";
+
+const cleanPart = (text) => (typeof text === "string" ? text.trim() : "");
+
+const formatLocationLabel = (feature) => {
+    const geocoding = feature?.properties?.geocoding;
+
+    const candidates = [
+        cleanPart(geocoding?.name),
+        cleanPart(geocoding?.locality),
+        cleanPart(geocoding?.admin?.level10),
+        cleanPart(geocoding?.city)
+    ];
+
+    const parts = candidates.filter(
+        (part, index, array) => part && array.indexOf(part) === index
+    );
+
+    return parts.length > 0 ? parts.join(", ") : null;
+};
+
+const toNumber = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+};
+
+export const getLocationByCoords = async (lat, lon) => {
+    return axios.get(REVERSE_GEOCODE_URL, {
+        params: {
+            lat,
+            lon,
+            format: "geocodejson",
+            addressdetails: 1,
+            zoom: 17
+        },
+        timeout: 5000
+    });
+};
+
+async function resolveLocationDetails(latValue, lngValue) {
+    const lat = toNumber(latValue);
+    const lng = toNumber(lngValue);
+
+    if (lat === null || lng === null) {
+        return { label: null, coords: null };
+    }
+
+    try {
+        const response = await getLocationByCoords(lat, lng);
+
+        const feature = response?.data?.features?.[0];
+        const label = formatLocationLabel(feature);
+
+        return {
+            label,
+            coords: { lat, lng }
+        };
+    } catch (error) {
+        console.warn(`[Location] Failed to resolve ${lat},${lng}:`, error.message);
+
+        return {
+            label: null,
+            coords: { lat, lng }
+        };
+    }
+}
 
 export async function updateDeviceConfig(serial, configJson) {
     if (!pool) {
@@ -37,31 +105,71 @@ export async function getDeviceConfig(serial) {
     return rows.length ? rows[0] : null;
 }
 
-function buildIncidentLog(type, serial, payload) {
-    const lat = payload?.lat;
-    const lng = payload?.lng;
-    const source = payload?.source ?? "unknown";
+const formatIncidentMessage = ({
+    type,
+    locationLabel,
+    coords,
+    timestamp
+}) => {
+    const hasCoords =
+        coords && typeof coords.lat === "number" && typeof coords.lng === "number";
 
-    const hasLocation =
-        typeof lat === "number" && typeof lng === "number";
+    const locationText = locationLabel
+        ? locationLabel
+        : hasCoords
+            ? `${coords.lat}, ${coords.lng}`
+            : "Location unavailable";
+
+    const time = timestamp ? new Date(timestamp) : null;
+    const timeText =
+        time && !Number.isNaN(time.getTime())
+            ? new Intl.DateTimeFormat("en-US", {
+                dateStyle: "medium",
+                timeStyle: "short"
+            }).format(time)
+            : null;
+
+    const title =
+        type === "emergencyTriggered"
+            ? "Emergency alert"
+            : "Possible fall detected";
+
+    return timeText
+        ? `Last location: ${locationText}\n ${timeText}`
+        : `Last location: ${locationText}`;
+};
+
+async function buildIncidentLog(type, serial, payload) {
+    const location = await resolveLocationDetails(payload?.lat, payload?.lng);
+    const recordedAt = new Date().toISOString();
 
     switch (type) {
         case "emergencyTriggered":
             return {
                 activityType: "emergency",
                 status: "triggered",
-                message: hasLocation
-                    ? `Emergency button activated. Source: ${source}. Location: ${lat}, ${lng}`
-                    : `Emergency button activated. Source: ${source}. Location unavailable`
+                message: formatIncidentMessage({
+                    type,
+                    locationLabel: location.label,
+                    coords: location.coords,
+                    timestamp: recordedAt
+                }),
+                location,
+                recordedAt
             };
 
         case "fallDetected":
             return {
                 activityType: "fall",
                 status: "triggered",
-                message: hasLocation
-                    ? `Possible fall detected. Source: ${source}. Location: ${lat}, ${lng}`
-                    : `Possible fall detected. Source: ${source}. Location unavailable`
+                message: formatIncidentMessage({
+                    type,
+                    locationLabel: location.label,
+                    coords: location.coords,
+                    timestamp: recordedAt
+                }),
+                location,
+                recordedAt
             };
 
         default:
@@ -75,7 +183,7 @@ export async function saveIncidentLog(type, serial, payload) {
         return null;
     }
 
-    const incident = buildIncidentLog(type, serial, payload);
+    const incident = await buildIncidentLog(type, serial, payload);
 
     if (!incident) {
         return null;
@@ -118,9 +226,13 @@ export async function saveIncidentLog(type, serial, payload) {
                 incident.status,
                 incident.message,
                 JSON.stringify({
-                    event: type,
-                    serial,
-                    payload
+                    location: {
+                        label: incident.location?.label ?? null,
+                        lat: incident.location?.coords?.lat ?? null,
+                        lng: incident.location?.coords?.lng ?? null
+                    },
+                    timestamp: payload?.timestamp ?? null,
+                    source: payload?.source ?? null
                 }),
                 serial
             ]
