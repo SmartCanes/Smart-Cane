@@ -387,21 +387,31 @@ export async function handleEvent(ws, data) {
         "scanStatus",
         "configSaved",
         "piConfigUpdated",
-        "emergencyTriggered",
-        "emergencyStopped",
         "fallDetected",
         "fallCleared"
     ]);
 
     if (event === "emergencyTriggered" || event === "fallDetected") {
-        console.log(event, serial, payload);
-        await saveIncidentLog(event, serial, payload);
-        await triggerMessagingApi(event, serial, payload);
-        await sendIncidentPushNotifications({
-            event,
-            serial,
-            payload
+        const clients = subscriptions.get(serial);
+        if (clients) {
+            for (const c of clients) {
+                safeSend(c, { event, serial, payload });
+            }
+        }
+
+        Promise.allSettled([
+            saveIncidentLog(event, serial, payload),
+            triggerMessagingApi(event, serial, payload),
+            sendIncidentPushNotifications({
+                event,
+                serial,
+                payload
+            })
+        ]).catch((err) => {
+            console.error(`[Incident] async processing failed:`, err.message);
         });
+
+        return;
     }
 
 
