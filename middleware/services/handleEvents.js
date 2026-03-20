@@ -1,4 +1,4 @@
-import { getDeviceConfig, saveIncidentLog, updateDeviceConfig } from "../db/database.js";
+import { getDeviceConfig, saveIncidentLog, updateDeviceConfig, upsertLastLocationIfNeeded } from "../db/database.js";
 import { sendIncidentPushNotifications } from "./pushService.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
@@ -372,7 +372,6 @@ export async function handleEvent(ws, data) {
 
     const FORWARDED_EVENTS = new Set([
         "status",
-        "gps",
         "piStatus",
         "routeResponse",
         "destinationReached",
@@ -409,6 +408,21 @@ export async function handleEvent(ws, data) {
             })
         ]).catch((err) => {
             console.error(`[Incident] async processing failed:`, err.message);
+        });
+
+        return;
+    }
+
+    if (event === "gps") {
+        const clients = subscriptions.get(serial);
+        if (clients) {
+            for (const c of clients) {
+                safeSend(c, { event, serial, payload });
+            }
+        }
+
+        upsertLastLocationIfNeeded(serial, payload).catch((err) => {
+            console.error(`[GPS] Failed to save last location for ${serial}:`, err.message);
         });
 
         return;

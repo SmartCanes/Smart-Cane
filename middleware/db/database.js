@@ -250,6 +250,146 @@ export async function saveIncidentLog(type, serial, payload) {
     }
 }
 
+// ---GPS--------
+const GPS_SAVE_INTERVAL_MS = 15000;
+const GPS_MIN_DISTANCE_METERS = 15;
+
+const lastGpsCache = new Map();
+
+function toRadians(value) {
+    return (value * Math.PI) / 180;
+}
+
+function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+
+    const dLat = toRadians(lat2 - lat1);
+    const dLng = toRadians(lng2 - lng1);
+
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+function shouldSaveGps(serial, lat, lng, timestamp) {
+    const previous = lastGpsCache.get(serial);
+
+    if (!previous) {
+        return true;
+    }
+
+    const elapsed = timestamp - previous.timestamp;
+    if (elapsed >= GPS_SAVE_INTERVAL_MS) {
+        return true;
+    }
+
+    const moved = distanceMeters(previous.lat, previous.lng, lat, lng);
+    return moved >= GPS_MIN_DISTANCE_METERS;
+}
+
+export async function upsertLastLocationIfNeeded(serial, gps) {
+    if (!pool || !serial || !gps) {
+        return null;
+    }
+
+    const lat = toNumber(gps.lat);
+    const lng = toNumber(gps.lng);
+    const sats = toNumber(gps.sats);
+    const hdop = toNumber(gps.hdop);
+    const gpsStatus = toNumber(gps.status) ?? 0;
+    const fix = gps.fix === true;
+
+    if (!fix || lat === null || lng === null) {
+        return null;
+    }
+
+    const now = Date.now();
+
+    if (!shouldSaveGps(serial, lat, lng, now)) {
+        return { skipped: true };
+    }
+
+    const [result] = await pool.execute(
+        `
+        INSERT INTO device_last_location_tbl
+        (
+            device_id,
+            lat,
+            lng,
+            sats,
+            fix_status,
+            hdop,
+            gps_status,
+            recorded_at
+        )
+        SELECT
+            d.device_id,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            NOW()
+        FROM device_tbl d
+        WHERE d.device_serial_number = ?
+        ON DUPLICATE KEY UPDATE
+            lat = VALUES(lat),
+            lng = VALUES(lng),
+            sats = VALUES(sats),
+            fix_status = VALUES(fix_status),
+            hdop = VALUES(hdop),
+            gps_status = VALUES(gps_status),
+            recorded_at = VALUES(recorded_at)
+        `,
+        [lat, lng, sats, fix ? 1 : 0, hdop, gpsStatus, serial]
+    );
+
+    lastGpsCache.set(serial, {
+        lat,
+        lng,
+        timestamp: now
+    });
+
+    return result;
+}
+
+export async function getLastDeviceLocation(serial) {
+    if (!pool || !serial) {
+        return null;
+    }
+
+    const [rows] = await pool.execute(
+        `
+        SELECT
+            dl.lat,
+            dl.lng,
+            dl.sats,
+            dl.fix_status,
+            dl.hdop,
+            dl.gps_status,
+            dl.recorded_at
+        FROM device_last_location_tbl dl
+        JOIN device_tbl d ON d.device_id = dl.device_id
+        WHERE d.device_serial_number = ?
+        LIMIT 1
+        `,
+        [serial]
+    );
+
+    return rows.length ? rows[0] : null;
+}
+
+
+
+
+
 const toRows = (result) => {
     if (Array.isArray(result)) return result[0] || [];
     if (result?.rows) return result.rows;
