@@ -51,13 +51,14 @@ function buildLocationText(payload = {}) {
 
 function buildIncidentNotification(event, serial, payload = {}) {
     const isFall = event === "fallDetected";
-    const title = isFall ? "Fall detected" : "Emergency alert";
+    const title = isFall ? "Fall Detected" : "Emergency Alert";
     const locationText = buildLocationText(payload);
-    const source = payload?.source || "device";
+    const formatDeviceLabel = (deviceSerial) =>
+        deviceSerial ? ` on device ${deviceSerial}` : "";
 
     return {
         title,
-        body: `${serial}: ${isFall ? "Possible fall" : "SOS triggered"}. ${locationText}. Source: ${source}.`,
+        body: `${serial}: ${isFall ? `A possible fall was detected for a VIP. Check the live map and confirm their condition as soon as possible.` : `The VIP triggered an emergency alert`}. .`,
         icon: DEFAULT_ICON,
         tag: `${event}-${serial}`,
         path: `/devices/${serial}?tab=alerts`,
