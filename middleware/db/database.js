@@ -387,6 +387,201 @@ export async function getLastDeviceLocation(serial) {
 }
 
 
+// ---Routes---
+const ROUTE_STATUSES = new Set(["pending", "active", "completed", "cleared", "failed"]);
+
+function normalizeCoordinate(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+}
+
+function extractDestinationFromRoute(routePayload) {
+    const path = Array.isArray(routePayload?.paths) ? routePayload.paths[0] : null;
+    const coords = path?.points?.coordinates;
+
+    if (Array.isArray(coords) && coords.length > 0) {
+        const last = coords[coords.length - 1];
+        if (Array.isArray(last) && last.length >= 2) {
+            return {
+                lat: normalizeCoordinate(last[1]),
+                lng: normalizeCoordinate(last[0])
+            };
+        }
+    }
+
+    return { lat: null, lng: null };
+}
+
+export async function saveRouteRequest(serial, payload = {}) {
+    if (!pool || !serial) {
+        return null;
+    }
+
+    const destination = Array.isArray(payload?.to) ? payload.to : [];
+    const lat = normalizeCoordinate(destination[0]);
+    const lng = normalizeCoordinate(destination[1]);
+
+    if (lat === null || lng === null) {
+        return null;
+    }
+
+    const guardianId = payload?.guardianId ?? null;
+    const destinationLabel = payload?.label ?? null;
+
+    const sql = `
+        INSERT INTO device_route_tbl (
+            device_id,
+            guardian_id,
+            destination_lat,
+            destination_lng,
+            destination_label,
+            status,
+            requested_at,
+            completed_at,
+            cleared_at,
+            route_geojson,
+            provider_payload,
+            distance_meters,
+            duration_ms,
+            updated_at
+        )
+        SELECT
+            d.device_id,
+            ?,
+            ?,
+            ?,
+            ?,
+            'pending',
+            NOW(),
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NOW()
+        FROM device_tbl d
+        WHERE d.device_serial_number = ?
+        ON DUPLICATE KEY UPDATE
+            guardian_id = VALUES(guardian_id),
+            destination_lat = VALUES(destination_lat),
+            destination_lng = VALUES(destination_lng),
+            destination_label = VALUES(destination_label),
+            status = 'pending',
+            requested_at = NOW(),
+            completed_at = NULL,
+            cleared_at = NULL,
+            route_geojson = NULL,
+            provider_payload = NULL,
+            distance_meters = NULL,
+            duration_ms = NULL,
+            updated_at = NOW();
+    `;
+
+    return pool.execute(sql, [guardianId, lat, lng, destinationLabel, serial]);
+}
+
+export async function saveRouteResponse(serial, payload = {}) {
+    if (!pool || !serial) {
+        return null;
+    }
+
+    const routePayload = payload?.route;
+    if (!routePayload) {
+        return null;
+    }
+
+    const path = Array.isArray(routePayload?.paths) ? routePayload.paths[0] : null;
+    const geoJson = path?.points || null;
+    const destination = extractDestinationFromRoute(routePayload);
+
+    const distanceMeters = normalizeCoordinate(path?.distance ?? routePayload?.distance);
+    const durationMs = normalizeCoordinate(path?.time ?? routePayload?.time);
+
+    const sql = `
+        INSERT INTO device_route_tbl (
+            device_id,
+            guardian_id,
+            destination_lat,
+            destination_lng,
+            destination_label,
+            route_geojson,
+            provider_payload,
+            status,
+            distance_meters,
+            duration_ms,
+            requested_at,
+            completed_at,
+            cleared_at,
+            updated_at
+        )
+        SELECT
+            d.device_id,
+            dr.guardian_id,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            'active',
+            ?,
+            ?,
+            COALESCE(dr.requested_at, NOW()),
+            NULL,
+            NULL,
+            NOW()
+        FROM device_tbl d
+        LEFT JOIN device_route_tbl dr ON dr.device_id = d.device_id
+        WHERE d.device_serial_number = ?
+        ON DUPLICATE KEY UPDATE
+            destination_lat = VALUES(destination_lat),
+            destination_lng = VALUES(destination_lng),
+            destination_label = VALUES(destination_label),
+            route_geojson = VALUES(route_geojson),
+            provider_payload = VALUES(provider_payload),
+            status = 'active',
+            distance_meters = VALUES(distance_meters),
+            duration_ms = VALUES(duration_ms),
+            completed_at = NULL,
+            cleared_at = NULL,
+            updated_at = NOW();
+    `;
+
+    const routeGeoJsonString = geoJson ? JSON.stringify(geoJson) : null;
+    const providerPayloadString = routePayload ? JSON.stringify(routePayload) : null;
+
+    return pool.execute(sql, [
+        destination.lat,
+        destination.lng,
+        payload?.destinationLabel ?? null,
+        routeGeoJsonString,
+        providerPayloadString,
+        distanceMeters,
+        durationMs,
+        serial
+    ]);
+}
+
+export async function updateRouteStatus(serial, status) {
+    if (!pool || !serial || !ROUTE_STATUSES.has(status)) {
+        return null;
+    }
+
+    const sql = `
+        UPDATE device_route_tbl dr
+        JOIN device_tbl d ON d.device_id = dr.device_id
+        SET
+            dr.status = ?,
+            dr.updated_at = NOW(),
+            dr.completed_at = CASE WHEN ? = 'completed' THEN NOW() ELSE NULL END,
+            dr.cleared_at = CASE WHEN ? = 'cleared' THEN NOW() ELSE NULL END
+        WHERE d.device_serial_number = ?;
+    `;
+
+    return pool.execute(sql, [status, status, status, serial]);
+}
+
+
 
 
 

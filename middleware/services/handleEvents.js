@@ -1,4 +1,4 @@
-import { getDeviceConfig, saveIncidentLog, updateDeviceConfig, upsertLastLocationIfNeeded } from "../db/database.js";
+import { getDeviceConfig, saveIncidentLog, saveRouteRequest, saveRouteResponse, updateDeviceConfig, updateRouteStatus, upsertLastLocationIfNeeded } from "../db/database.js";
 import { sendIncidentPushNotifications } from "./pushService.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
@@ -373,9 +373,6 @@ export async function handleEvent(ws, data) {
     const FORWARDED_EVENTS = new Set([
         "status",
         "piStatus",
-        "routeResponse",
-        "destinationReached",
-        "destinationCleared",
         "bluetoothDevices",
         "pairStatus",
         "unpairStatus",
@@ -428,6 +425,65 @@ export async function handleEvent(ws, data) {
         return;
     }
 
+    if (event === "routeResponse") {
+        try {
+            await saveRouteResponse(serial, payload);
+        } catch (err) {
+            console.error(`[Route] Failed to persist route for ${serial}:`, err.message);
+        }
+
+        const clients = subscriptions.get(serial);
+        if (!clients) return;
+
+        for (const c of clients) {
+            safeSend(c, { event, serial, payload: { routeUpdated: true } });
+        }
+
+        return;
+    }
+
+    if (event === "destinationReached") {
+        try {
+            await updateRouteStatus(serial, "completed");
+        } catch (err) {
+            console.error(`[Route] Failed to mark completed for ${serial}:`, err.message);
+        }
+
+        const clients = subscriptions.get(serial);
+        if (!clients) return;
+
+        for (const c of clients) {
+            safeSend(c, {
+                event: "destinationReached",
+                serial,
+                payload: { routeUpdated: true }
+            });
+        }
+
+        return;
+    }
+
+    if (event === "destinationCleared") {
+        try {
+            await updateRouteStatus(serial, "cleared");
+        } catch (err) {
+            console.error(`[Route] Failed to mark cleared for ${serial}:`, err.message);
+        }
+
+        const clients = subscriptions.get(serial);
+        if (!clients) return;
+
+        for (const c of clients) {
+            safeSend(c, {
+                event: "destinationCleared",
+                serial,
+                payload: { routeUpdated: true }
+            });
+        }
+
+        return;
+    }
+
 
     if (FORWARDED_EVENTS.has(event)) {
         const clients = subscriptions.get(serial);
@@ -443,6 +499,10 @@ export async function handleEvent(ws, data) {
     if (event === "requestRoute") {
         if (!payload?.to) return;
 
+        saveRouteRequest(serial, payload).catch((err) => {
+            console.error(`[Route] Failed to persist request for ${serial}:`, err.message);
+        });
+
         const piWs = serialToPi.get(serial);
 
         if (!piWs) {
@@ -454,6 +514,10 @@ export async function handleEvent(ws, data) {
                         serial,
                         message: "Pi offline"
                     });
+
+            updateRouteStatus(serial, "failed").catch((err) => {
+                console.error(`[Route] Failed to mark failed for ${serial}:`, err.message);
+            });
 
             return;
         }
@@ -651,6 +715,10 @@ export async function handleEvent(ws, data) {
                         serial,
                         payload: "Pi offline"
                     });
+
+            updateRouteStatus(serial, "failed").catch((err) => {
+                console.error(`[Route] Failed to mark failed for ${serial}:`, err.message);
+            });
 
             return;
         }
