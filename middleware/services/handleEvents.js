@@ -9,7 +9,7 @@ import {
     upsertLastLocationIfNeeded,
     deleteRouteBySerial
 } from "../db/database.js";
-import { sendIncidentPushNotifications } from "./pushService.js";
+import { sendIncidentPushNotifications, sendRoutePushNotifications } from "./pushService.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
 export const wsToSerial = new Map();      // clientWs -> serial
@@ -407,7 +407,7 @@ export async function handleEvent(ws, data) {
 
         Promise.allSettled([
             saveIncidentLog(event, serial, payload),
-            triggerMessagingApi(event, serial, payload),
+            // triggerMessagingApi(event, serial, payload),
             sendIncidentPushNotifications({
                 event,
                 serial,
@@ -442,6 +442,14 @@ export async function handleEvent(ws, data) {
             await saveRouteHistoryLog(serial, {
                 status: "active"
             });
+
+            sendRoutePushNotifications({
+                type: "active",
+                serial,
+                payload
+            }).catch((err) => {
+                console.error(`[Push] Failed to send route start notification for ${serial}:`, err.message);
+            });
         } catch (err) {
             console.error(`[Route] Failed to persist route for ${serial}:`, err.message);
         }
@@ -466,6 +474,14 @@ export async function handleEvent(ws, data) {
             });
 
             await deleteRouteBySerial(serial);
+
+            sendRoutePushNotifications({
+                type: "completed",
+                serial,
+                payload
+            }).catch((err) => {
+                console.error(`[Push] Failed to send destination reached notification for ${serial}:`, err.message);
+            });
         } catch (err) {
             console.error(`[Route] Failed to mark completed for ${serial}:`, err.message);
         }
@@ -494,6 +510,14 @@ export async function handleEvent(ws, data) {
             });
 
             await deleteRouteBySerial(serial);
+
+            sendRoutePushNotifications({
+                type: "cleared",
+                serial,
+                payload
+            }).catch((err) => {
+                console.error(`[Push] Failed to send route cleared notification for ${serial}:`, err.message);
+            });
         } catch (err) {
             console.error(`[Route] Failed to mark cleared for ${serial}:`, err.message);
         }
