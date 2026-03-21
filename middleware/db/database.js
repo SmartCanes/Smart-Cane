@@ -581,10 +581,176 @@ export async function updateRouteStatus(serial, status) {
     return pool.execute(sql, [status, status, status, serial]);
 }
 
+export async function getRouteBySerial(serial) {
+    if (!pool || !serial) {
+        return null;
+    }
+
+    const [rows] = await pool.execute(
+        `
+      SELECT
+        dr.route_id,
+        dr.device_id,
+        dr.guardian_id,
+        dr.destination_label,
+        dr.destination_lat,
+        dr.destination_lng,
+        dr.route_geojson,
+        dr.provider_payload,
+        dr.status,
+        dr.distance_meters,
+        dr.duration_ms,
+        dr.requested_at,
+        dr.completed_at,
+        dr.cleared_at,
+        dr.updated_at,
+        d.device_serial_number
+      FROM device_route_tbl dr
+      INNER JOIN device_tbl d
+        ON d.device_id = dr.device_id
+      WHERE d.device_serial_number = ?
+      LIMIT 1
+    `,
+        [serial]
+    );
+
+    return rows.length ? rows[0] : null;
+}
+
+function buildRouteSnapshot(routeRow) {
+    if (!routeRow) return null;
+
+    return {
+        routeId: routeRow.route_id,
+        deviceId: routeRow.device_id,
+        guardianId: routeRow.guardian_id,
+        serial: routeRow.device_serial_number,
+        destination: {
+            label: routeRow.destination_label ?? null,
+            lat:
+                routeRow.destination_lat != null
+                    ? Number(routeRow.destination_lat)
+                    : null,
+            lng:
+                routeRow.destination_lng != null
+                    ? Number(routeRow.destination_lng)
+                    : null
+        },
+        status: routeRow.status ?? null,
+        distanceMeters:
+            routeRow.distance_meters != null
+                ? Number(routeRow.distance_meters)
+                : null,
+        durationMs:
+            routeRow.duration_ms != null
+                ? Number(routeRow.duration_ms)
+                : null,
+        requestedAt: routeRow.requested_at ?? null,
+        completedAt: routeRow.completed_at ?? null,
+        clearedAt: routeRow.cleared_at ?? null,
+        updatedAt: routeRow.updated_at ?? null,
+        routeGeoJson: routeRow.route_geojson ?? null,
+        providerPayload: routeRow.provider_payload ?? null
+    };
+}
+
+export async function saveRouteHistoryLog(serial, options = {}) {
+    if (!pool || !serial) {
+        return null;
+    }
+
+    try {
+        const routeRow = await getRouteBySerial(serial);
+
+        if (!routeRow) {
+            console.warn(`[RouteHistory] No route found for serial: ${serial}`);
+            return null;
+        }
+
+        const {
+            status = routeRow.status ?? "active",
+            message = null,
+            guardianId = routeRow.guardian_id ?? null
+        } = options;
+
+        const finalMessage =
+            message ||
+            (status === "active"
+                ? `Route started to ${routeRow.destination_label || "selected destination"}`
+                : status === "completed"
+                    ? "Device reached the destination"
+                    : status === "cleared"
+                        ? "Route was cleared"
+                        : status === "failed"
+                            ? "Route failed"
+                            : `Route updated to ${status}`);
+
+        const metadataJson = buildRouteSnapshot({
+            ...routeRow,
+            status
+        });
+
+        const [result] = await pool.execute(
+            `
+        INSERT INTO device_logs_tbl
+        (
+          device_id,
+          guardian_id,
+          activity_type,
+          status,
+          message,
+          metadata_json,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, NOW())
+      `,
+            [
+                routeRow.device_id,
+                guardianId,
+                "route",
+                status,
+                finalMessage,
+                JSON.stringify(metadataJson)
+            ]
+        );
+
+        return result;
+    } catch (err) {
+        console.error(
+            `[RouteHistory] Failed to save route history for ${serial}:`,
+            err.message
+        );
+        return null;
+    }
+}
+
+export async function deleteRouteBySerial(serial) {
+    if (!pool || !serial) {
+        return null;
+    }
+
+    try {
+        const [result] = await pool.execute(
+            `
+        DELETE dr
+        FROM device_route_tbl dr
+        INNER JOIN device_tbl d
+          ON d.device_id = dr.device_id
+        WHERE d.device_serial_number = ?
+      `,
+            [serial]
+        );
+
+        return result;
+    } catch (err) {
+        console.error(`[Route] Failed to delete route for ${serial}:`, err.message);
+        return null;
+    }
+}
 
 
 
-
+// PUSH SUBSCRIPTIONS
 const toRows = (result) => {
     if (Array.isArray(result)) return result[0] || [];
     if (result?.rows) return result.rows;

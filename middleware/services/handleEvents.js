@@ -1,4 +1,14 @@
-import { getDeviceConfig, saveIncidentLog, saveRouteRequest, saveRouteResponse, updateDeviceConfig, updateRouteStatus, upsertLastLocationIfNeeded } from "../db/database.js";
+import {
+    getDeviceConfig,
+    saveIncidentLog,
+    saveRouteHistoryLog,
+    saveRouteRequest,
+    saveRouteResponse,
+    updateDeviceConfig,
+    updateRouteStatus,
+    upsertLastLocationIfNeeded,
+    deleteRouteBySerial
+} from "../db/database.js";
 import { sendIncidentPushNotifications } from "./pushService.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
@@ -428,6 +438,10 @@ export async function handleEvent(ws, data) {
     if (event === "routeResponse") {
         try {
             await saveRouteResponse(serial, payload);
+
+            await saveRouteHistoryLog(serial, {
+                status: "active"
+            });
         } catch (err) {
             console.error(`[Route] Failed to persist route for ${serial}:`, err.message);
         }
@@ -445,6 +459,13 @@ export async function handleEvent(ws, data) {
     if (event === "destinationReached") {
         try {
             await updateRouteStatus(serial, "completed");
+
+            await saveRouteHistoryLog(serial, {
+                status: "completed",
+                message: "Device reached the destination"
+            });
+
+            await deleteRouteBySerial(serial);
         } catch (err) {
             console.error(`[Route] Failed to mark completed for ${serial}:`, err.message);
         }
@@ -466,6 +487,13 @@ export async function handleEvent(ws, data) {
     if (event === "destinationCleared") {
         try {
             await updateRouteStatus(serial, "cleared");
+
+            await saveRouteHistoryLog(serial, {
+                status: "cleared",
+                message: "Route was cleared"
+            });
+
+            await deleteRouteBySerial(serial);
         } catch (err) {
             console.error(`[Route] Failed to mark cleared for ${serial}:`, err.message);
         }
