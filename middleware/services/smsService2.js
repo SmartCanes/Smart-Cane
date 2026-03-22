@@ -78,29 +78,16 @@ function buildSmsBody(event, serial, payload = {}) {
         ? `https://maps.google.com/?q=${lat.toFixed(5)},${lng.toFixed(5)}`
         : null;
 
-    const website = "https://icane.org";
+    const locationText = label || "Unavailable";
+
+    console.log(event)
 
     if (event === "fallDetected") {
-        if (label) {
-            return `iCane Alert: A fall was detected for device ${serial}. Please check on the user immediately. Reported location: ${label}. More info: ${website}`;
-        }
+        return `EMERGENCY: Fall detected for device ${serial}. Please check on the user immediately. More information at icane.org`;
 
-        if (mapLink) {
-            return `iCane Alert: A fall was detected for device ${serial}. Please check on the user immediately. Last known location: ${mapLink}. More info: ${website}`;
-        }
-
-        return `iCane Alert: A fall was detected for device ${serial}. Please check on the user immediately. Location is currently unavailable. More info: ${website}`;
     }
 
-    if (label) {
-        return `iCane SOS Alert: The user triggered an SOS from device ${serial}. Immediate assistance may be needed. Reported location: ${label}. More info: ${website}`;
-    }
-
-    if (mapLink) {
-        return `iCane SOS Alert: The user triggered an SOS from device ${serial}. Immediate assistance may be needed. Last known location: ${mapLink}. More info: ${website}`;
-    }
-
-    return `iCane SOS Alert: The user triggered an SOS from device ${serial}. Immediate assistance may be needed. Location is currently unavailable. More info: ${website}`;
+    return `EMERGENCY: SOS triggered for device ${serial}. Please check on the user immediately. More information at icane.org`;
 }
 
 export async function sendIncidentSms({ event, serial, payload = {} }) {
