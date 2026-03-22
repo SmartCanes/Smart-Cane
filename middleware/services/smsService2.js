@@ -112,6 +112,7 @@ export async function sendIncidentSms({ event, serial, payload = {} }) {
 
     const emergencyRows = await getEmergencyContactsBySerial(serial);
     const emergencyNumbers = emergencyRows
+        .filter((row) => (row?.smsAlerts ?? 1) === 1)
         .map((row) => normalizePhoneNumber(row?.contactNumber))
         .filter(Boolean);
 

@@ -3,6 +3,14 @@ import pool from "./dbClient.js";
 
 const REVERSE_GEOCODE_URL = "https://reverse.icane.org/reverse";
 
+const DEFAULT_GUARDIAN_SETTINGS = {
+    allow_location: 1,
+    push_notifications: 1,
+    email_notifications: 1,
+    sms_alerts: 1,
+    two_factor_enabled: 0
+};
+
 const cleanPart = (text) => (typeof text === "string" ? text.trim() : "");
 
 const formatLocationLabel = (feature) => {
@@ -628,14 +636,17 @@ export async function getEmergencyContactsBySerial(serial) {
         SELECT
             g.contact_number AS contactNumber,
             g.guardian_id AS guardianId,
+            COALESCE(gs.sms_alerts, 1) AS smsAlerts,
             dg.assigned_at AS assignedAt
         FROM device_guardian_tbl dg
         JOIN device_tbl d ON d.device_id = dg.device_id
         JOIN guardian_tbl g ON g.guardian_id = dg.guardian_id
+        LEFT JOIN guardian_settings_tbl gs ON gs.guardian_id = g.guardian_id
         WHERE d.device_serial_number = ?
           AND dg.is_emergency_contact = 1
           AND g.contact_number IS NOT NULL
           AND g.contact_number != ''
+          AND COALESCE(gs.sms_alerts, 1) = 1
         ORDER BY dg.assigned_at DESC
         `,
         [serial]
@@ -771,6 +782,107 @@ export async function deleteRouteBySerial(serial) {
         return result;
     } catch (err) {
         console.error(`[Route] Failed to delete route for ${serial}:`, err.message);
+        return null;
+    }
+}
+
+// ---Guardian settings---
+const toBoolInt = (value, fallback = 0) => {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === "boolean") return value ? 1 : 0;
+    if (typeof value === "number") return value ? 1 : 0;
+    if (typeof value === "string") {
+        const lowered = value.trim().toLowerCase();
+        if (["1", "true", "yes", "on"].includes(lowered)) return 1;
+        if (["0", "false", "no", "off"].includes(lowered)) return 0;
+    }
+    return fallback;
+};
+
+export async function getGuardianSettings(guardianId) {
+    if (!pool || !guardianId) {
+        return { ...DEFAULT_GUARDIAN_SETTINGS };
+    }
+
+    try {
+        const [rows] = await pool.execute(
+            `
+            SELECT
+                allow_location,
+                push_notifications,
+                email_notifications,
+                sms_alerts,
+                two_factor_enabled,
+                updated_at
+            FROM guardian_settings_tbl
+            WHERE guardian_id = ?
+            LIMIT 1
+            `,
+            [guardianId]
+        );
+
+        if (!rows || !rows.length) {
+            return { ...DEFAULT_GUARDIAN_SETTINGS };
+        }
+
+        const row = rows[0];
+        return {
+            allow_location: toBoolInt(row.allow_location, 1),
+            push_notifications: toBoolInt(row.push_notifications, 1),
+            email_notifications: toBoolInt(row.email_notifications, 1),
+            sms_alerts: toBoolInt(row.sms_alerts, 1),
+            two_factor_enabled: toBoolInt(row.two_factor_enabled, 0),
+            updated_at: row.updated_at || null
+        };
+    } catch (error) {
+        console.error(`[DB] Failed to fetch guardian settings for ${guardianId}:`, error?.message || error);
+        return { ...DEFAULT_GUARDIAN_SETTINGS };
+    }
+}
+
+export async function upsertGuardianSettings(guardianId, settings = {}) {
+    if (!pool || !guardianId) {
+        return null;
+    }
+
+    const allowLocation = toBoolInt(settings.allow_location ?? settings.allowLocation, DEFAULT_GUARDIAN_SETTINGS.allow_location);
+    const pushNotifications = toBoolInt(settings.push_notifications ?? settings.pushNotifications, DEFAULT_GUARDIAN_SETTINGS.push_notifications);
+    const emailNotifications = toBoolInt(settings.email_notifications ?? settings.emailNotifications, DEFAULT_GUARDIAN_SETTINGS.email_notifications);
+    const smsAlerts = toBoolInt(settings.sms_alerts ?? settings.smsAlerts, DEFAULT_GUARDIAN_SETTINGS.sms_alerts);
+    const twoFactor = toBoolInt(settings.two_factor_enabled ?? settings.twoFactorEnabled, DEFAULT_GUARDIAN_SETTINGS.two_factor_enabled);
+
+    const sql = `
+        INSERT INTO guardian_settings_tbl (
+            guardian_id,
+            allow_location,
+            push_notifications,
+            email_notifications,
+            sms_alerts,
+            two_factor_enabled,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+        ON DUPLICATE KEY UPDATE
+            allow_location = VALUES(allow_location),
+            push_notifications = VALUES(push_notifications),
+            email_notifications = VALUES(email_notifications),
+            sms_alerts = VALUES(sms_alerts),
+            two_factor_enabled = VALUES(two_factor_enabled),
+            updated_at = NOW();
+    `;
+
+    try {
+        const [result] = await pool.execute(sql, [
+            guardianId,
+            allowLocation,
+            pushNotifications,
+            emailNotifications,
+            smsAlerts,
+            twoFactor
+        ]);
+
+        return result;
+    } catch (error) {
+        console.error(`[DB] Failed to upsert guardian settings for ${guardianId}:`, error?.message || error);
         return null;
     }
 }
