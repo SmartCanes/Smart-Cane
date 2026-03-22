@@ -111,31 +111,6 @@ function buildIncidentMessage(type, serial, payload) {
     }
 }
 
-async function triggerMessagingApi(type, serial, payload) {
-    try {
-        const incident = buildIncidentMessage(type, serial, payload);
-
-        if (!incident) {
-            return;
-        }
-
-        await fetch("https://your-messaging-service/api/incidents", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                type,
-                serial,
-                title: incident.title,
-                message: incident.message,
-                payload
-            })
-        });
-    } catch (err) {
-        console.error(`[MessagingAPI] Failed for ${type} ${serial}:`, err.message);
-    }
-}
 
 function mergeDeviceConfig(existing = {}, partial = {}) {
     const result = { ...existing };
@@ -509,7 +484,8 @@ export async function handleEvent(ws, data) {
 
     if (event === "destinationCleared") {
         try {
-            await updateRouteStatus(serial, "cleared");
+            console.log(payload)
+            await updateRouteStatus(serial, "cleared", payload?.guardianId ?? null);
 
             await saveRouteHistoryLog(serial, {
                 status: "cleared",
@@ -784,7 +760,8 @@ export async function handleEvent(ws, data) {
 
         safeSend(piWs, {
             event: "clearDestination",
-            serial
+            serial,
+            payload
         });
 
         console.log(`[NAV] clearDestination forwarded to Pi ${serial}`);

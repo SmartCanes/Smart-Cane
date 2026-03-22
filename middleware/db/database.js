@@ -570,7 +570,7 @@ export async function saveRouteResponse(serial, payload = {}) {
     ]);
 }
 
-export async function updateRouteStatus(serial, status) {
+export async function updateRouteStatus(serial, status, guardianId = null) {
     if (!pool || !serial || !ROUTE_STATUSES.has(status)) {
         return null;
     }
@@ -579,6 +579,7 @@ export async function updateRouteStatus(serial, status) {
         UPDATE device_route_tbl dr
         JOIN device_tbl d ON d.device_id = dr.device_id
         SET
+            dr.guardian_id = COALESCE(?, dr.guardian_id),
             dr.status = ?,
             dr.updated_at = NOW(),
             dr.completed_at = CASE WHEN ? = 'completed' THEN NOW() ELSE NULL END,
@@ -586,7 +587,7 @@ export async function updateRouteStatus(serial, status) {
         WHERE d.device_serial_number = ?;
     `;
 
-    return pool.execute(sql, [status, status, status, serial]);
+    return pool.execute(sql, [guardianId, status, status, status, serial]);
 }
 
 export async function getRouteBySerial(serial) {
