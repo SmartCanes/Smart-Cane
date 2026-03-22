@@ -78,27 +78,29 @@ function buildSmsBody(event, serial, payload = {}) {
         ? `https://maps.google.com/?q=${lat.toFixed(5)},${lng.toFixed(5)}`
         : null;
 
+    const website = "https://icane.org";
+
     if (event === "fallDetected") {
         if (label) {
-            return `EMERGENCY: Fall detected for device ${serial}. Please check on the user immediately. Location: ${label}`;
+            return `iCane Alert: A fall was detected for device ${serial}. Please check on the user immediately. Reported location: ${label}. More info: ${website}`;
         }
 
         if (mapLink) {
-            return `EMERGENCY: Fall detected for device ${serial}. Please check on the user immediately. Location: ${mapLink}`;
+            return `iCane Alert: A fall was detected for device ${serial}. Please check on the user immediately. Last known location: ${mapLink}. More info: ${website}`;
         }
 
-        return `EMERGENCY: Fall detected for device ${serial}. Please check on the user immediately. Location unavailable.`;
+        return `iCane Alert: A fall was detected for device ${serial}. Please check on the user immediately. Location is currently unavailable. More info: ${website}`;
     }
 
     if (label) {
-        return `EMERGENCY: SOS triggered from device ${serial}. Please respond immediately. Location: ${label}`;
+        return `iCane SOS Alert: The user triggered an SOS from device ${serial}. Immediate assistance may be needed. Reported location: ${label}. More info: ${website}`;
     }
 
     if (mapLink) {
-        return `EMERGENCY: SOS triggered from device ${serial}. Please respond immediately. Location: ${mapLink}`;
+        return `iCane SOS Alert: The user triggered an SOS from device ${serial}. Immediate assistance may be needed. Last known location: ${mapLink}. More info: ${website}`;
     }
 
-    return `EMERGENCY: SOS triggered from device ${serial}. Please respond immediately. Location unavailable.`;
+    return `iCane SOS Alert: The user triggered an SOS from device ${serial}. Immediate assistance may be needed. Location is currently unavailable. More info: ${website}`;
 }
 
 export async function sendIncidentSms({ event, serial, payload = {} }) {
@@ -110,11 +112,13 @@ export async function sendIncidentSms({ event, serial, payload = {} }) {
     const { payload: enrichedPayload } = await withLastLocation(serial, payload);
     const body = buildSmsBody(event, serial, enrichedPayload);
 
+    console.log(`[IprogSMS] Prepared SMS for ${serial}:`, body);
+
     const emergencyRows = await getEmergencyContactsBySerial(serial);
     const emergencyNumbers = emergencyRows
-        .filter((row) => (row?.smsAlerts ?? 1) === 1)
         .map((row) => normalizePhoneNumber(row?.contactNumber))
         .filter(Boolean);
+
 
     const targets = [...new Set([...emergencyNumbers, ...toNumbers])];
 

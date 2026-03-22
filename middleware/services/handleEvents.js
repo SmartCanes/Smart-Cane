@@ -415,11 +415,11 @@ export async function handleEvent(ws, data) {
                 serial,
                 payload
             }),
-            // sendIncidentSms({
-            //     event,
-            //     serial,
-            //     payload
-            // })
+            sendIncidentSms({
+                event,
+                serial,
+                payload
+            })
         ]).catch((err) => {
             console.error(`[Incident] async processing failed:`, err.message);
         });
@@ -842,7 +842,6 @@ export async function handleEvent(ws, data) {
             const mergedConfig = mergeDeviceConfig(currentConfig, incomingDeviceConfig);
 
             await updateDeviceConfig(serial, mergedConfig);
-            console.log(payload);
 
             const piWs = serialToPi.get(serial);
 
