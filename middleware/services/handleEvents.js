@@ -10,6 +10,8 @@ import {
     deleteRouteBySerial
 } from "../db/database.js";
 import { sendIncidentPushNotifications, sendRoutePushNotifications } from "./pushService.js";
+// import { sendIncidentSms } from "./twilioService.js";
+import { sendIncidentSms } from "./smsService2.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
 export const wsToSerial = new Map();      // clientWs -> serial
@@ -409,6 +411,11 @@ export async function handleEvent(ws, data) {
             saveIncidentLog(event, serial, payload),
             // triggerMessagingApi(event, serial, payload),
             sendIncidentPushNotifications({
+                event,
+                serial,
+                payload
+            }),
+            sendIncidentSms({
                 event,
                 serial,
                 payload

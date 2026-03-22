@@ -617,6 +617,33 @@ export async function getRouteBySerial(serial) {
     return rows.length ? rows[0] : null;
 }
 
+// ---Emergency contacts---
+export async function getEmergencyContactsBySerial(serial) {
+    if (!pool || !serial) {
+        return [];
+    }
+
+    const [rows] = await pool.execute(
+        `
+        SELECT
+            g.contact_number AS contactNumber,
+            g.guardian_id AS guardianId,
+            dg.assigned_at AS assignedAt
+        FROM device_guardian_tbl dg
+        JOIN device_tbl d ON d.device_id = dg.device_id
+        JOIN guardian_tbl g ON g.guardian_id = dg.guardian_id
+        WHERE d.device_serial_number = ?
+          AND dg.is_emergency_contact = 1
+          AND g.contact_number IS NOT NULL
+          AND g.contact_number != ''
+        ORDER BY dg.assigned_at DESC
+        `,
+        [serial]
+    );
+
+    return rows || [];
+}
+
 function buildRouteSnapshot(routeRow) {
     if (!routeRow) return null;
 
