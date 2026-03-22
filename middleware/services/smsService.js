@@ -1,5 +1,9 @@
 import axios from "axios";
-import { getLastDeviceLocation, getEmergencyContactsBySerial } from "../db/database.js";
+import {
+    getLastDeviceLocation,
+    getEmergencyContactsBySerial,
+    getGuardianSettings
+} from "../db/database.js";
 
 const semaphoreApiKey = process.env.SEMAPHORE_API_KEY;
 const semaphoreSender = "iCane";
@@ -90,7 +94,23 @@ export async function sendIncidentSms({ event, serial, payload = {} }) {
     const body = buildSmsBody(event, serial, coordsText);
 
     const emergencyRows = await getEmergencyContactsBySerial(serial);
+    const guardianIds = [...new Set(emergencyRows.map((row) => row?.guardianId).filter(Boolean))];
+
+    const guardianSettings = await Promise.all(
+        guardianIds.map(async (guardianId) => {
+            const settings = await getGuardianSettings(guardianId);
+            return [guardianId, settings];
+        })
+    );
+
+    const smsEnabledGuardians = new Set(
+        guardianSettings
+            .filter(([, settings]) => settings?.sms_alerts === 1)
+            .map(([guardianId]) => guardianId)
+    );
+
     const emergencyNumbers = emergencyRows
+        .filter((row) => !row?.guardianId || smsEnabledGuardians.has(row.guardianId))
         .map((row) => normalizeSemaphorePhoneNumber(row?.contactNumber))
         .filter(Boolean);
 

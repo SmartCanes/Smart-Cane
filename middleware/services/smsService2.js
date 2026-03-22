@@ -1,5 +1,9 @@
 import axios from "axios";
-import { getLastDeviceLocation, getEmergencyContactsBySerial } from "../db/database.js";
+import {
+    getLastDeviceLocation,
+    getEmergencyContactsBySerial,
+    getGuardianSettings
+} from "../db/database.js";
 
 const iprogEndpoint =
     process.env.IPROG_SMS_ENDPOINT || "https://www.iprogsms.com/api/v1/sms_messages";
@@ -99,10 +103,25 @@ export async function sendIncidentSms({ event, serial, payload = {} }) {
     const { payload: enrichedPayload } = await withLastLocation(serial, payload);
     const body = buildSmsBody(event, serial, enrichedPayload);
 
-    console.log(`[IprogSMS] Prepared SMS for ${serial}:`, body);
 
     const emergencyRows = await getEmergencyContactsBySerial(serial);
+    const guardianIds = [...new Set(emergencyRows.map((row) => row?.guardianId).filter(Boolean))];
+
+    const guardianSettings = await Promise.all(
+        guardianIds.map(async (guardianId) => {
+            const settings = await getGuardianSettings(guardianId);
+            return [guardianId, settings];
+        })
+    );
+
+    const smsEnabledGuardians = new Set(
+        guardianSettings
+            .filter(([, settings]) => settings?.sms_alerts === 1)
+            .map(([guardianId]) => guardianId)
+    );
+
     const emergencyNumbers = emergencyRows
+        .filter((row) => !row?.guardianId || smsEnabledGuardians.has(row.guardianId))
         .map((row) => normalizePhoneNumber(row?.contactNumber))
         .filter(Boolean);
 
@@ -113,6 +132,9 @@ export async function sendIncidentSms({ event, serial, payload = {} }) {
         console.warn("[IprogSMS] No target numbers found for SMS.");
         return [];
     }
+
+    console.log(`[IprogSMS] Prepared SMS for ${serial}:`, body);
+
 
     const results = await Promise.allSettled(
         targets.map((phone_number) =>
