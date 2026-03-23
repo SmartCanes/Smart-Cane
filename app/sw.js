@@ -34,7 +34,24 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "iCane Alert";
   const options = buildNotificationOptions(payload);
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    (async () => {
+      // If any iCane client is already visible, skip showing a redundant push.
+      try {
+        const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        const hasVisibleClient = clientList.some((client) => client.visibilityState === "visible");
+
+        if (hasVisibleClient) {
+          return;
+        }
+      } catch (err) {
+        // If visibility check fails, fall through and show the notification.
+        console.warn("SW visibility check failed:", err?.message || err);
+      }
+
+      return self.registration.showNotification(title, options);
+    })()
+  );
 });
 
 self.addEventListener("message", (event) => {
