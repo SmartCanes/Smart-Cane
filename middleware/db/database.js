@@ -334,7 +334,8 @@ export async function upsertLastLocationIfNeeded(serial, gps) {
             fix_status,
             hdop,
             gps_status,
-            recorded_at
+            recorded_at,
+            updated_at
         )
         SELECT
             d.device_id,
@@ -344,6 +345,7 @@ export async function upsertLastLocationIfNeeded(serial, gps) {
             ?,
             ?,
             ?,
+            NOW(),
             NOW()
         FROM device_tbl d
         WHERE d.device_serial_number = ?
@@ -354,7 +356,8 @@ export async function upsertLastLocationIfNeeded(serial, gps) {
             fix_status = VALUES(fix_status),
             hdop = VALUES(hdop),
             gps_status = VALUES(gps_status),
-            recorded_at = VALUES(recorded_at)
+            recorded_at = VALUES(recorded_at),
+            updated_at = VALUES(updated_at)
         `,
         [lat, lng, sats, fix ? 1 : 0, hdop, gpsStatus, serial]
     );
