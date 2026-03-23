@@ -320,6 +320,37 @@ export async function handleEvent(ws, data) {
         return;
     }
 
+    if (event === "mobile_gps_control") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            safeSend(ws, {
+                event: "mobileGpsControlError",
+                serial,
+                payload: { message: "Pi offline" }
+            });
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "mobile_gps_control",
+            serial,
+            payload: {
+                enabled: !!payload?.enabled
+            }
+        });
+
+        safeSend(ws, {
+            event: "mobileGpsControlForwarded",
+            serial,
+            payload: {
+                enabled: !!payload?.enabled
+            }
+        });
+
+        return;
+    }
+
     if (event === "subscribe") {
         const oldSerial = wsToSerial.get(ws);
 
