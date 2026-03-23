@@ -83,11 +83,11 @@ function buildRouteNotification(type, serial, payload = {}) {
     const metaByType = {
         active: {
             title: "Route started",
-            message: `Navigation started for ${serial} to ${destinationText}.`
+            message: `Navigation started for ${serial}`
         },
         completed: {
             title: "Destination reached",
-            message: `${serial} reached ${destinationText}.`
+            message: `${serial} reached the destination`
         },
         cleared: {
             title: "Route cleared",
