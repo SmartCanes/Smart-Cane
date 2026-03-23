@@ -291,6 +291,35 @@ export async function handleEvent(ws, data) {
         return;
     }
 
+    if (event === "mobile_location") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            safeSend(ws, {
+                event: "mobileLocationError",
+                serial,
+                payload: { message: "Pi offline" }
+            });
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "mobile_location",
+            serial,
+            payload: {
+                lat: payload.lat,
+                lng: payload.lng,
+                accuracy: typeof payload?.accuracy === "number" ? payload.accuracy : null,
+                altitude: typeof payload?.altitude === "number" ? payload.altitude : null,
+                heading: typeof payload?.heading === "number" ? payload.heading : null,
+                speed: typeof payload?.speed === "number" ? payload.speed : null,
+                timestamp: typeof payload?.timestamp === "number" ? payload.timestamp : Date.now()
+            }
+        });
+
+        return;
+    }
+
     if (event === "subscribe") {
         const oldSerial = wsToSerial.get(ws);
 
