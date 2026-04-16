@@ -22,7 +22,7 @@ def create_app():
 
     db.init_app(app)
     jwt.init_app(app)
-    frontend_origins = os.getenv("FRONTEND_URL")
+    frontend_origins = os.getenv("ADMIN_FRONTEND_URL")
     if frontend_origins:
         cors_origins = [origin.strip() for origin in frontend_origins.split(",") if origin.strip()]
     else:

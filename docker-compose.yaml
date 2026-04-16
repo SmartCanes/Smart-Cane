@@ -74,6 +74,36 @@ services:
     networks:
       - app-net
 
+  admin-backend:
+    build:
+      context: ./admin-backend
+      dockerfile: dockerfile
+    container_name: admin_backend_server
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "5001"
+    depends_on:
+      - mysql
+    networks:
+      - app-net
+
+  admin-frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: dockerfile
+    container_name: admin_frontend_app
+    expose:
+      - "80"
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - admin-backend
+    networks:
+      - app-net
+
   nominatim:
     image: mediagis/nominatim:5.2
     container_name: nominatim
