@@ -11,6 +11,7 @@ const buildNotificationOptions = (payload = {}) => ({
   icon: payload.icon || "/icane.svg",
   badge: payload.badge || payload.icon || "/icane.svg",
   tag: payload.tag || "icane-alert",
+  silent: payload.silent === true ? true : false,
   renotify: true,
   requireInteraction: Boolean(payload.requireInteraction),
   vibrate: payload.vibrate || [300, 150, 300],
