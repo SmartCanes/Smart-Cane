@@ -9,3 +9,4 @@ server
 /pi/graph-cache
 /pi/logs
 /pi/novaliches.osm-gh
+/nominatim-cache
