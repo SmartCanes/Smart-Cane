@@ -11,7 +11,7 @@ import {
 } from "../db/database.js";
 import { sendIncidentPushNotifications, sendRoutePushNotifications } from "./pushService.js";
 // import { sendIncidentSms } from "./twilioService.js";
-import { sendIncidentSms } from "./smsService2.js";
+import { sendIncidentSms } from "./smsService.js";
 
 export const subscriptions = new Map();   // serial -> Set<clientWs>
 export const wsToSerial = new Map();      // clientWs -> serial
