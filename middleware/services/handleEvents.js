@@ -892,6 +892,41 @@ export async function handleEvent(ws, data) {
         return;
     }
 
+    if (event === "previewVoice") {
+        const piWs = serialToPi.get(serial);
+
+        if (!piWs || piWs.readyState !== 1) {
+            const clients = subscriptions.get(serial);
+            if (clients) {
+                for (const c of clients) {
+                    safeSend(c, {
+                        event: "previewVoiceError",
+                        serial,
+                        payload: "Pi offline"
+                    });
+                }
+            }
+            return;
+        }
+
+        safeSend(piWs, {
+            event: "previewVoice",
+            serial,
+            payload: payload || {}
+        });
+
+        safeSend(ws, {
+            event: "previewVoiceForwarded",
+            serial,
+            payload: {
+                forwarded: true
+            }
+        });
+
+        console.log(`[VOICE] previewVoice forwarded to Pi ${serial}`);
+        return;
+    }
+
     if (event === "requestDeviceConfig") {
         await sendDeviceConfig(ws, serial);
         return;
