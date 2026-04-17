@@ -79,9 +79,22 @@ async function withLastLocation(serial, payload = {}) {
     }
 }
 
-function buildSmsBody(event, serial, coordsText) {
-    const prefix = event === "fallDetected" ? "FALL" : "SOS";
-    return coordsText ? `${prefix} ${serial} ${coordsText}` : `${prefix} ${serial} location unknown`;
+function buildSmsBody(event, serial, payload = {}) {
+    const lat = toNumber(payload?.lat ?? payload?.location?.lat);
+    const lng = toNumber(payload?.lng ?? payload?.location?.lng);
+    const hasCoords = lat !== null && lng !== null;
+    const mapLink = hasCoords
+        ? `https://maps.google.com/?q=${lat.toFixed(5)},${lng.toFixed(5)}`
+        : null;
+    const infoLink = "https://icane.org";
+
+    const locationLine = mapLink ? ` Location: ${mapLink}` : " Location: unavailable.";
+
+    if (event === "fallDetected") {
+        return `EMERGENCY: Fall detected for device ${serial}. Please check on the user immediately.${locationLine} More information at ${infoLink}`;
+    }
+
+    return `EMERGENCY: SOS triggered for device ${serial}. Please check on the user immediately.${locationLine} More information at ${infoLink}`;
 }
 
 export async function sendIncidentSms({ event, serial, payload = {} }) {
@@ -90,8 +103,8 @@ export async function sendIncidentSms({ event, serial, payload = {} }) {
         return [];
     }
 
-    const { coordsText } = await withLastLocation(serial, payload);
-    const body = buildSmsBody(event, serial, coordsText);
+    const { payload: enrichedPayload } = await withLastLocation(serial, payload);
+    const body = buildSmsBody(event, serial, enrichedPayload);
 
     const emergencyRows = await getEmergencyContactsBySerial(serial);
     const guardianIds = [...new Set(emergencyRows.map((row) => row?.guardianId).filter(Boolean))];
