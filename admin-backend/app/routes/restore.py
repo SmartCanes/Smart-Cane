@@ -68,6 +68,10 @@ def _restore_deleted_admin(old_payload):
 	if not deleted_admin_id:
 		return None, "Missing deleted_admin_id in audit payload.", 400
 
+	restored_first_login = bool(
+		old_payload.get("was_first_login", old_payload.get("is_first_login", False))
+	)
+
 	archive = (
 		AdminArchive.query.filter_by(admin_id=int(deleted_admin_id))
 		.order_by(AdminArchive.archived_at.desc())
@@ -102,7 +106,7 @@ def _restore_deleted_admin(old_payload):
 		barangay=archive.barangay,
 		street_address=archive.street_address,
 		role=archive.role if archive.role in ("admin", "super_admin") else "admin",
-		is_first_login=False,
+		is_first_login=restored_first_login,
 		profile_image_url=archive.profile_image_url,
 		created_at=archive.original_created_at or datetime.now(timezone.utc),
 		updated_at=datetime.now(timezone.utc),
@@ -169,7 +173,7 @@ def _restore_deleted_device(old_payload):
 
 	existing = Device.query.filter(func.lower(Device.device_serial_number) == serial.lower()).first()
 	if existing:
-		return None, "Device serial already exists in active devices and cannot be restored.", 409
+		return None, "Restore cannot proceed because a device with serial number '%s' already exists. Duplicate device serial numbers are not permitted." % serial, 409
 
 	restored = Device(
 		device_serial_number=serial,

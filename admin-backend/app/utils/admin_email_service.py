@@ -12,12 +12,16 @@ def send_admin_otp_email(recipient_email, otp_code, admin_name=None):
         smtp_port     = int(os.environ.get("MAIL_PORT",    587))
         email_user    = os.environ.get("MAIL_USERNAME",    "")
         email_pass    = os.environ.get("MAIL_PASSWORD",    "")
-        sender_name   = os.environ.get("MAIL_SENDER_NAME", "iCane Smart Cane")
+        sender_name   = os.environ.get("MAIL_SENDER_NAME", "iCane Smart Cane Admin")
 
         if not email_user or not email_pass:
-            msg = "Mail configuration is missing. Set MAIL_USERNAME and MAIL_PASSWORD."
-            print(f"[ADMIN OTP] {msg}")
-            return {"ok": False, "error": msg}
+            print("=" * 60)
+            print("ADMIN OTP EMAIL (Console - configure SMTP for real emails)")
+            print(f"TO:       {recipient_email}")
+            print(f"OTP CODE: {otp_code}")
+            print(f"EXPIRES:  5 minutes")
+            print("=" * 60)
+            return True
 
         msg            = MIMEMultipart("alternative")
         msg["Subject"] = "iCane Admin — Email Verification"
@@ -113,31 +117,41 @@ iCane Team
             server.send_message(msg)
 
         print(f"[ADMIN OTP] Email sent successfully to {recipient_email}")
-        return {"ok": True, "error": None}
+        return True
 
     except Exception as e:
-        err = str(e)
-        print(f"[ADMIN OTP] Failed to send to {recipient_email}: {err}")
-        return {"ok": False, "error": err}
+        print(f"[ADMIN OTP] Failed to send to {recipient_email}: {e}")
+        # Fallback — always print to console so dev can still test
+        print("=" * 60)
+        print("ADMIN OTP EMAIL (Fallback — SMTP failed)")
+        print(f"TO:       {recipient_email}")
+        print(f"OTP CODE: {otp_code}")
+        print("=" * 60)
+        return True
 
 
 def send_admin_invite_email(recipient_email, login_link, temporary_username, admin_name=None):
+
     try:
         smtp_server = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
         smtp_port = int(os.environ.get("MAIL_PORT", 587))
         email_user = os.environ.get("MAIL_USERNAME", "")
         email_pass = os.environ.get("MAIL_PASSWORD", "")
-        sender_name = os.environ.get("MAIL_SENDER_NAME", "iCane Smart Cane")
+        sender_name = os.environ.get("MAIL_SENDER_NAME", "iCane Smart Cane Admin")
 
         if not email_user or not email_pass:
-            msg = "Mail configuration is missing. Set MAIL_USERNAME and MAIL_PASSWORD."
-            print(f"[ADMIN INVITE] {msg}")
-            return {"ok": False, "error": msg}
+            print("=" * 60)
+            print("ADMIN INVITE EMAIL (Console - configure SMTP for real emails)")
+            print(f"TO:       {recipient_email}")
+            print(f"USERNAME: {temporary_username}")
+            print(f"LOGIN:    {login_link}")
+            print("=" * 60)
+            return {"ok": True}
 
         display_name = admin_name or "Admin"
 
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = "iCane Admin - Account Invitation"
+        msg["Subject"] = "iCane Admin Account Invitation"
         msg["From"] = formataddr((sender_name, email_user))
         msg["To"] = recipient_email
 
@@ -145,35 +159,36 @@ def send_admin_invite_email(recipient_email, login_link, temporary_username, adm
         <!DOCTYPE html>
         <html>
         <head>
-            <meta charset=\"utf-8\">
+            <meta charset="utf-8">
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
                 .header {{ background: #1C253C; color: white; padding: 20px; text-align: center; }}
                 .content {{ background: #f9f9f9; padding: 30px; }}
-                .box {{ background: white; border-radius: 8px; border: 1px solid #e5e7eb; padding: 14px; margin: 18px 0; }}
-                .button {{ display: inline-block; padding: 12px 18px; background: #1C253C; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; }}
+                .box {{ margin: 16px 0; padding: 12px 14px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }}
+                .button {{ display: inline-block; background: #1C253C; color: #fff !important; text-decoration: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; }}
                 .footer {{ background: #ddd; padding: 15px; text-align: center; font-size: 12px; color: #666; }}
             </style>
         </head>
         <body>
-            <div class=\"container\">
-                <div class=\"header\">
+            <div class="container">
+                <div class="header">
                     <h1>iCane: Smart Cane</h1>
                 </div>
-                <div class=\"content\">
-                    <h2>Admin Account Invitation</h2>
+                <div class="content">
+                    <h2>Admin Account Created</h2>
                     <p>Hello <strong>{display_name}</strong>,</p>
-                    <p>You were invited to access the iCane Admin panel. Use your temporary credentials to log in.</p>
-                    <div class=\"box\">
-                        <p style=\"margin:0;\"><strong>Temporary Username:</strong> {temporary_username}</p>
-                        <p style=\"margin:8px 0 0;\">Temporary Password: use the password provided by your Super Admin.</p>
+                    <p>Your admin account has been created. Please sign in and complete your first-time setup.</p>
+                    <div class="box">
+                        <p><strong>Temporary Username:</strong> {temporary_username}</p>
+                        <p><strong>Login Link:</strong> <a href="{login_link}">{login_link}</a></p>
                     </div>
-                    <p>After your first login, a verification OTP will be sent to this email before you can set your new username and password.</p>
-                    <p><a class=\"button\" href=\"{login_link}\">Open Admin Login</a></p>
-                    <p>If the button does not work, open this link in your browser:<br><a href=\"{login_link}\">{login_link}</a></p>
+                    <p><a class="button" href="{login_link}">Go to Login</a></p>
+                    <p>Best regards,<br>iCane Team</p>
                 </div>
-                <div class=\"footer\">&copy; 2026 iCane. All rights reserved.</div>
+                <div class="footer">
+                    <p>&copy; 2026 iCane. All rights reserved.</p>
+                </div>
             </div>
         </body>
         </html>
@@ -184,14 +199,13 @@ iCane Admin Account Invitation
 
 Hello {display_name},
 
-You were invited to access the iCane Admin panel.
+Your admin account has been created. Please sign in and complete your first-time setup.
 
 Temporary Username: {temporary_username}
-Temporary Password: use the password provided by your Super Admin.
+Login Link: {login_link}
 
-Login here: {login_link}
-
-After first login, an OTP will be sent to your email before you can set your new username and password.
+Best regards,
+iCane Team
         """
 
         msg.attach(MIMEText(text_content, "plain"))
@@ -203,8 +217,14 @@ After first login, an OTP will be sent to your email before you can set your new
             server.send_message(msg)
 
         print(f"[ADMIN INVITE] Email sent successfully to {recipient_email}")
-        return {"ok": True, "error": None}
+        return {"ok": True}
+
     except Exception as e:
-        err = str(e)
-        print(f"[ADMIN INVITE] Failed to send to {recipient_email}: {err}")
-        return {"ok": False, "error": err}
+        print(f"[ADMIN INVITE] Failed to send to {recipient_email}: {e}")
+        print("=" * 60)
+        print("ADMIN INVITE EMAIL (Fallback — SMTP failed)")
+        print(f"TO:       {recipient_email}")
+        print(f"USERNAME: {temporary_username}")
+        print(f"LOGIN:    {login_link}")
+        print("=" * 60)
+        return {"ok": False, "error": str(e)}

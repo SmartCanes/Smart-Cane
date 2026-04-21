@@ -17,6 +17,7 @@ admin_bp = Blueprint("admin", __name__)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 MAX_FILE_SIZE_MB   = 2
+DELETED_ACCOUNT_MESSAGE = "This account has been deleted. Please contact the super administrator for assistance."
 
 
 
@@ -53,6 +54,49 @@ def get_upload_folder() -> str:
     return os.path.abspath(folder)
 
 
+def _find_archived_admin_by_email(email: str):
+    value = (email or "").strip()
+    if not value:
+        return None
+    return AdminArchive.query.filter_by(email=value).first()
+
+
+def _safe_json_loads(value):
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _matches_date_filter(created_at, date_filter):
+    if date_filter == "all" or not created_at:
+        return True
+
+    now = datetime.now(timezone.utc)
+    dt = created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc)
+
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if date_filter == "today":
+        return dt >= start_of_today
+
+    if date_filter == "last7":
+        return dt >= (start_of_today - timedelta(days=6))
+
+    if date_filter == "last30":
+        return dt >= (start_of_today - timedelta(days=29))
+
+    if date_filter == "this_month":
+        return dt.year == now.year and dt.month == now.month
+
+    if date_filter == "this_year":
+        return dt.year == now.year
+
+    return True
+
+
 
 @admin_bp.route("/", methods=["GET"])
 @jwt_required()
@@ -83,9 +127,6 @@ def create_admin():
     err = require_super_admin()
     if err:
         return err
-
-    caller_id = int(get_jwt_identity())
-    caller = Admin.query.get(caller_id)
 
     data = request.get_json(silent=True)
     if not data:
@@ -131,31 +172,24 @@ def create_admin():
     email_sent = bool(send_result.get("ok"))
     email_error = send_result.get("error")
 
+    actor_admin = Admin.query.get(int(get_jwt_identity()))
+    actor_name = (
+        f"{(actor_admin.first_name or '').strip()} {(actor_admin.last_name or '').strip()}".strip()
+        if actor_admin else "An admin"
+    )
+
     create_notification(
         audience="all_admins",
         type="admin_created",
-        title="Admin invitation sent",
+        title="New admin created",
         body=(
-            f"{(caller.first_name + ' ' + caller.last_name).strip() if caller else 'An admin'} "
-            f"({(caller.role or 'admin').replace('_', ' ') if caller else 'admin'}) "
-            f"invited {new_admin.email} to be {(new_admin.role or 'admin').replace('_', ' ')}."
+            f"{actor_name} added {new_admin.first_name} {new_admin.last_name} "
+            f"({new_admin.email})."
         ),
         link_path="/admins",
         related_admin_id=new_admin.admin_id,
     )
-    if email_sent:
-        return jsonify({
-            "message": "Admin created successfully. Invitation email with login link was sent.",
-            "admin_id": new_admin.admin_id,
-            "email_sent": True,
-        }), 201
-
-    return jsonify({
-        "message": "Admin account created, but invitation email failed to send.",
-        "admin_id": new_admin.admin_id,
-        "email_sent": False,
-        "error": email_error,
-    }), 201
+    return jsonify({"message": "Admin created successfully.", "admin_id": new_admin.admin_id}), 201
 
 
 @admin_bp.route("/<int:target_id>/update", methods=["PUT"])
@@ -167,26 +201,6 @@ def update_admin(target_id):
 
     target = Admin.query.get_or_404(target_id)
     data   = request.get_json(silent=True) or {}
-    caller_id = int(get_jwt_identity())
-
-    requested_role = data.get("role", target.role)
-    role_changed = requested_role != target.role
-    role_change_reason_code = str(data.get("reason_code", "")).strip()
-    role_change_reason_text = str(data.get("reason_text", "")).strip()
-
-    if role_changed:
-        if not role_change_reason_code:
-            return jsonify({"message": "reason_code is required when changing role."}), 400
-        if len(role_change_reason_text) < 10:
-            return jsonify({"message": "reason_text is required and must be at least 10 characters when changing role."}), 400
-
-        # Prevent downgrading the last remaining super admin.
-        if target.role == "super_admin" and requested_role == "admin":
-            super_admin_count = Admin.query.filter_by(role="super_admin").count()
-            if super_admin_count <= 1:
-                return jsonify({"message": "Cannot downgrade the last super admin."}), 409
-
-    old_role = target.role
 
     new_username = data.get("username", "").strip()
     if new_username and new_username != target.username:
@@ -210,29 +224,13 @@ def update_admin(target_id):
     target.city           = data.get("city",             target.city or "").strip() or None
     target.barangay       = data.get("barangay",         target.barangay or "").strip() or None
     target.street_address = data.get("street_address",   target.street_address or "").strip() or None
-    target.role           = requested_role
+    target.role           = data.get("role",             target.role)
     target.updated_at     = datetime.now(timezone.utc)
 
     new_password = data.get("password", "").strip()
     if new_password:
         target.password       = hash_password(new_password)
         target.is_first_login = True    # force the admin to go through first-login flow again
-
-    if role_changed:
-        db.session.add(
-            AdminAuditLog(
-                actor_admin_id=caller_id,
-                target_admin_id=target.admin_id,
-                action_type="role_change",
-                old_value_json=json.dumps({"role": old_role}),
-                new_value_json=json.dumps({"role": requested_role}),
-                reason_code=role_change_reason_code,
-                reason_text=role_change_reason_text,
-                status="success",
-                ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
-                user_agent=(request.user_agent.string or "")[:255],
-            )
-        )
 
     db.session.commit()
     return jsonify({"message": "Admin updated successfully."}), 200
@@ -246,24 +244,26 @@ def delete_admin(target_id):
     if err:
         return err
 
-    data = request.get_json(silent=True) or {}
-    reason_code = str(data.get("reason_code", "")).strip()
-    reason_text = str(data.get("reason_text", "")).strip()
-    if not reason_code:
-        return jsonify({"message": "reason_code is required."}), 400
-    if len(reason_text) < 10:
-        return jsonify({"message": "reason_text is required and must be at least 10 characters."}), 400
-
     caller_id = int(get_jwt_identity())
-    caller = Admin.query.get(caller_id)
 
     # Prevent super-admin from deleting themselves
     if caller_id == target_id:
         return jsonify({"message": "You cannot delete your own account."}), 400
 
+    data = request.get_json(silent=True) or {}
+    reason_code = str(data.get("reason_code", "")).strip()
+    reason_text = str(data.get("reason_text", "")).strip()
+
+    if not reason_code:
+        return jsonify({"message": "reason_code is required."}), 400
+    if len(reason_text) < 10:
+        return jsonify({"message": "reason_text is required and must be at least 10 characters."}), 400
+
     target = Admin.query.get_or_404(target_id)
-    deleted_email = target.email
-    deleted_role = (target.role or "admin").replace("_", " ")
+    actor = Admin.query.get(caller_id)
+    deleted_name = " ".join(
+        p for p in [target.first_name, target.middle_name, target.last_name] if p
+    ).strip() or target.username
 
     archive = AdminArchive(
         admin_id            = target.admin_id,
@@ -283,8 +283,6 @@ def delete_admin(target_id):
         original_created_at = target.created_at,
         archived_at         = datetime.now(timezone.utc),
         archived_by         = caller_id,
-        archived_reason_code = reason_code,
-        archived_reason_text = reason_text,
     )
     db.session.add(archive)
 
@@ -301,6 +299,7 @@ def delete_admin(target_id):
                 "username": target.username,
                 "email": target.email,
                 "role": target.role,
+                "was_first_login": bool(target.is_first_login),
             }),
             new_value_json=None,
             reason_code=reason_code,
@@ -314,25 +313,20 @@ def delete_admin(target_id):
     db.session.delete(target)
     db.session.commit()
 
-    try:
-        actor_name = (
-            " ".join(part for part in [caller.first_name if caller else "", caller.last_name if caller else ""] if part).strip()
-            or "A super admin"
-        )
-        actor_role = (caller.role if caller and caller.role else "super_admin").replace("_", " ")
-        create_notification(
-            audience="all_admins",
-            type="admin_deleted",
-            title="Admin account deleted",
-            body=(
-                f"{actor_name} ({actor_role}) deleted {deleted_email} "
-                f"({deleted_role}). Reason: {reason_code.replace('_', ' ')}."
-            ),
-            link_path="/admins",
-            related_admin_id=caller_id,
-        )
-    except Exception:
-        pass
+    actor_name = (
+        f"{(actor.first_name or '').strip()} {(actor.last_name or '').strip()}".strip()
+        if actor else "A super admin"
+    ) or "A super admin"
+    actor_role = ((actor.role if actor and actor.role else "super_admin") or "super_admin").replace("_", " ").title()
+
+    create_notification(
+        audience="all_admins",
+        type="admin_deleted",
+        title="Admin account deleted",
+        body=f"{actor_name} ({actor_role}) deleted admin account {deleted_name} ({target.email}).",
+        link_path="/admins",
+        related_admin_id=caller_id,
+    )
 
     return jsonify({"message": "Admin deleted and archived successfully."}), 200
 
@@ -344,66 +338,84 @@ def list_audit_logs():
     if err:
         return err
 
-    action_type = (request.args.get("action_type") or "").strip()
-    actor_admin_id = (request.args.get("actor_admin_id") or "").strip()
-    date_filter = (request.args.get("date_filter") or "").strip()
-    q = (request.args.get("q") or "").strip()
     page = max(int(request.args.get("page", 1)), 1)
     limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+    q = (request.args.get("q", "") or "").strip()
+    action_type = (request.args.get("action_type", "") or "").strip()
+    date_filter = (request.args.get("date_filter", "all") or "all").strip().lower()
 
-    query = AdminAuditLog.query
+    query = AdminAuditLog.query.order_by(AdminAuditLog.created_at.desc())
 
     if action_type:
-        if action_type == "device_delete":
-            query = query.filter(AdminAuditLog.action_type.in_(["device_delete", "device_deleted"]))
-        else:
-            query = query.filter(AdminAuditLog.action_type == action_type)
-    if actor_admin_id.isdigit():
-        query = query.filter(AdminAuditLog.actor_admin_id == int(actor_admin_id))
-
-    if date_filter:
-        now = datetime.now(timezone.utc)
-        start_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-
-        if date_filter == "today":
-            query = query.filter(AdminAuditLog.created_at >= start_today)
-        elif date_filter == "last7":
-            query = query.filter(AdminAuditLog.created_at >= (start_today - timedelta(days=6)))
-        elif date_filter == "last30":
-            query = query.filter(AdminAuditLog.created_at >= (start_today - timedelta(days=29)))
-        elif date_filter == "this_month":
-            start_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-            query = query.filter(AdminAuditLog.created_at >= start_month)
-        elif date_filter == "this_year":
-            start_year = datetime(now.year, 1, 1, tzinfo=timezone.utc)
-            query = query.filter(AdminAuditLog.created_at >= start_year)
+        query = query.filter(AdminAuditLog.action_type == action_type)
 
     if q:
         like = f"%{q}%"
         query = query.filter(
             or_(
-                AdminAuditLog.reason_text.ilike(like),
-                AdminAuditLog.reason_code.ilike(like),
                 AdminAuditLog.action_type.ilike(like),
+                AdminAuditLog.reason_code.ilike(like),
+                AdminAuditLog.reason_text.ilike(like),
+                AdminAuditLog.old_value_json.ilike(like),
+                AdminAuditLog.new_value_json.ilike(like),
             )
         )
 
-    total = query.count()
-    items = (
-        query.order_by(AdminAuditLog.created_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
-        .all()
-    )
+    rows = query.all()
+    filtered_rows = [row for row in rows if _matches_date_filter(row.created_at, date_filter)]
 
-    return jsonify(
-        {
-            "items": [item.to_dict() for item in items],
-            "page": page,
-            "limit": limit,
-            "total": total,
-        }
-    ), 200
+    total = len(filtered_rows)
+    start = (page - 1) * limit
+    end = start + limit
+    page_rows = filtered_rows[start:end]
+
+    items = []
+    for row in page_rows:
+        old_data = _safe_json_loads(row.old_value_json)
+        actor = row.actor_admin
+        actor_name = " ".join(
+            p for p in [getattr(actor, "first_name", None), getattr(actor, "last_name", None)] if p
+        ).strip() or "Unknown"
+
+        deleted_admin_name = (
+            old_data.get("full_name")
+            or old_data.get("deleted_admin_name")
+            or old_data.get("username")
+            or ""
+        )
+        deleted_concern_message = (
+            old_data.get("deleted_concern_message")
+            or old_data.get("message")
+            or ""
+        )
+        deleted_device_serial = (
+            old_data.get("deleted_device_serial")
+            or old_data.get("device_serial_number")
+            or ""
+        )
+
+        created_at = row.created_at
+        if created_at and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        items.append(
+            {
+                "audit_id": row.audit_id,
+                "actor_admin_id": row.actor_admin_id,
+                "target_admin_id": row.target_admin_id,
+                "actor_name": actor_name,
+                "action_type": row.action_type,
+                "reason_code": row.reason_code,
+                "reason_text": row.reason_text,
+                "status": row.status,
+                "created_at": created_at.isoformat().replace("+00:00", "Z") if created_at else None,
+                "deleted_admin_name": deleted_admin_name,
+                "deleted_concern_message": deleted_concern_message,
+                "deleted_device_serial": deleted_device_serial,
+            }
+        )
+
+    return jsonify({"items": items, "total": total, "page": page, "limit": limit}), 200
 
 
 
@@ -415,6 +427,9 @@ def request_otp():
         return jsonify({"message": "Email is required."}), 400
     admin = Admin.query.filter_by(email=email).first()
     if not admin:
+        archived = _find_archived_admin_by_email(email)
+        if archived:
+            return jsonify({"message": DELETED_ACCOUNT_MESSAGE}), 403
         return jsonify({"message": "If that email exists, an OTP has been sent."}), 200
 
     OTP.query.filter_by(email=email, purpose="first_login", is_used=False).update({"is_used": True})
@@ -426,19 +441,7 @@ def request_otp():
     db.session.add(otp)
     db.session.commit()
 
-    send_result = send_admin_otp_email(
-        recipient_email=email,
-        otp_code=code,
-        admin_name=admin.first_name,
-    )
-    if not send_result.get("ok"):
-        otp.is_used = True
-        db.session.commit()
-        return jsonify({
-            "message": "Failed to send OTP email.",
-            "error": send_result.get("error") or "Unknown SMTP error.",
-        }), 500
-
+    send_admin_otp_email(recipient_email=email, otp_code=code, admin_name=admin.first_name)
     return jsonify({"message": "OTP sent to email."}), 200
 
 
@@ -449,6 +452,12 @@ def verify_otp():
     otp_code = data.get("otp_code", "").strip()
     if not email or not otp_code:
         return jsonify({"message": "email and otp_code are required."}), 400
+
+    admin = Admin.query.filter_by(email=email).first()
+    if not admin:
+        archived = _find_archived_admin_by_email(email)
+        if archived:
+            return jsonify({"message": DELETED_ACCOUNT_MESSAGE}), 403
 
     otp = OTP.query.filter_by(email=email, otp_code=otp_code, is_used=False, purpose="first_login").first()
     if not otp:
@@ -473,6 +482,9 @@ def change_credentials():
 
     admin = Admin.query.filter_by(email=email).first()
     if not admin:
+        archived = _find_archived_admin_by_email(email)
+        if archived:
+            return jsonify({"message": DELETED_ACCOUNT_MESSAGE}), 403
         return jsonify({"message": "Admin not found."}), 404
 
     existing = Admin.query.filter_by(username=new_username).first()
@@ -489,10 +501,7 @@ def change_credentials():
         audience="super_admins",
         type="admin_setup_completed",
         title="Admin completed account setup",
-        body=(
-            f"{admin.first_name} {admin.last_name} "
-            f"({(admin.role or 'admin').replace('_', ' ')}) finished account setup."
-        ),
+        body=f"{admin.first_name} {admin.last_name} finished setting up their account.",
         link_path="/admins",
         related_admin_id=admin.admin_id,
     )
@@ -635,19 +644,7 @@ def request_email_otp():
     db.session.add(otp)
     db.session.commit()
 
-    send_result = send_admin_otp_email(
-        recipient_email=new_email,
-        otp_code=code,
-        admin_name=admin.first_name,
-    )
-    if not send_result.get("ok"):
-        otp.is_used = True
-        db.session.commit()
-        return jsonify({
-            "message": "Failed to send OTP email.",
-            "error": send_result.get("error") or "Unknown SMTP error.",
-        }), 500
-
+    send_admin_otp_email(recipient_email=new_email, otp_code=code, admin_name=admin.first_name)
     return jsonify({"message": "OTP sent to new email."}), 200
 
 

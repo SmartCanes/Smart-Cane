@@ -2,12 +2,14 @@ import bcrypt                                        # ← pip install bcrypt
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from app import db
-from app.models import Admin, LoginAttempt, OTP
+from app.models import Admin, AdminArchive, LoginAttempt, OTP
 from app.utils.admin_email_service import send_admin_otp_email
 from datetime import datetime, timezone, timedelta
 import random, string
 
 auth_bp = Blueprint("auth", __name__)
+
+DELETED_ACCOUNT_MESSAGE = "This account has been deleted. Please contact the super administrator for assistance."
 
 
 def _record_attempt(username, ip):
@@ -40,6 +42,22 @@ def _generate_otp(length: int = 6) -> str:
     return "".join(random.choices(string.digits, k=length))
 
 
+def _find_archived_admin_by_identifier(identifier: str):
+    value = (identifier or "").strip()
+    if not value:
+        return None
+    return AdminArchive.query.filter(
+        (AdminArchive.username == value) | (AdminArchive.email == value)
+    ).first()
+
+
+def _find_archived_admin_by_email(email: str):
+    value = (email or "").strip()
+    if not value:
+        return None
+    return AdminArchive.query.filter_by(email=value).first()
+
+
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json(silent=True)
@@ -62,6 +80,9 @@ def login():
     _record_attempt(identifier, ip)
 
     if admin is None:
+        archived = _find_archived_admin_by_identifier(identifier)
+        if archived:
+            return jsonify({"message": DELETED_ACCOUNT_MESSAGE}), 403
         return jsonify({"message": "Invalid credentials."}), 401
 
     if not _check_password(admin.password, password):
@@ -126,8 +147,11 @@ def password_reset_request_otp():
         return jsonify({"message": "Email is required."}), 400
 
     admin = Admin.query.filter_by(email=email).first()
-    # Avoid leaking whether an email exists
     if not admin:
+        archived = _find_archived_admin_by_email(email)
+        if archived:
+            return jsonify({"message": DELETED_ACCOUNT_MESSAGE}), 403
+        # Avoid leaking whether an email exists
         return jsonify({"message": "If that email exists, an OTP has been sent."}), 200
 
     OTP.query.filter_by(email=email, purpose="password_reset", is_used=False).update(
@@ -147,19 +171,7 @@ def password_reset_request_otp():
     db.session.add(otp)
     db.session.commit()
 
-    send_result = send_admin_otp_email(
-        recipient_email=email,
-        otp_code=code,
-        admin_name=admin.first_name,
-    )
-    if not send_result.get("ok"):
-        otp.is_used = True
-        db.session.commit()
-        return jsonify({
-            "message": "Failed to send OTP email.",
-            "error": send_result.get("error") or "Unknown SMTP error.",
-        }), 500
-
+    send_admin_otp_email(recipient_email=email, otp_code=code, admin_name=admin.first_name)
     return jsonify({"message": "If that email exists, an OTP has been sent."}), 200
 
 
@@ -197,6 +209,9 @@ def password_reset_reset():
 
     admin = Admin.query.filter_by(email=email).first()
     if not admin:
+        archived = _find_archived_admin_by_email(email)
+        if archived:
+            return jsonify({"message": DELETED_ACCOUNT_MESSAGE}), 403
         return jsonify({"message": "Invalid request."}), 400
 
     otp = OTP.query.filter_by(

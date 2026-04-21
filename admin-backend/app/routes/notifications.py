@@ -9,44 +9,9 @@ from datetime import datetime, timezone
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/api/notifications")
 
 
-def _as_utc_iso(dt):
-    if not dt:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
 def _current_admin():
     admin_id = int(get_jwt_identity())
     return Admin.query.get(admin_id)
-
-
-def _extract_concern_source(raw_message: str | None):
-    msg = str(raw_message or "")
-    if not msg.startswith("[Source:"):
-        return "Unknown", msg.strip()
-
-    closing = msg.find("]")
-    if closing == -1:
-        return "Unknown", msg.strip()
-
-    source_key = msg[len("[Source:"):closing].strip().lower()
-    clean_message = msg[closing + 1 :].strip()
-
-    source_map = {
-        "guest-landing": "Guest Page",
-        "guardian-dashboard": "Dashboard",
-    }
-    source_label = source_map.get(source_key, source_key.replace("-", " ").title() or "Unknown")
-    return source_label, clean_message
-
-
-def _concern_preview(text: str, max_len: int = 120):
-    value = (text or "").strip()
-    if len(value) <= max_len:
-        return value
-    return f"{value[:max_len]}..."
 
 
 def _ensure_concern_notifications(limit: int = 50):
@@ -70,16 +35,11 @@ def _ensure_concern_notifications(limit: int = 50):
         if already:
             continue
 
-        source_label, clean_message = _extract_concern_source(c.message)
-
         n = Notification(
             audience="all_admins",
             type="guardian_concern",
             title="New guardian concern",
-            body=(
-                f"{c.name} ({c.email}) submitted a concern from {source_label}: "
-                f"{_concern_preview(clean_message)}"
-            ),
+            body=f"{c.name}: {c.message[:120]}{'…' if c.message and len(c.message) > 120 else ''}",
             link_path="/guardian-concerns",
             related_concern_id=c.concern_id,
         )
@@ -128,9 +88,8 @@ def list_notifications():
         if not is_read:
             unread_count += 1
         d = n.to_dict()
-        d["created_at"] = _as_utc_iso(n.created_at)
         d["is_read"] = is_read
-        d["read_at"] = _as_utc_iso(r.read_at) if r and r.read_at else None
+        d["read_at"] = r.read_at.isoformat() if r and r.read_at else None
         items.append(d)
 
     return jsonify({"items": items, "unread_count": unread_count}), 200

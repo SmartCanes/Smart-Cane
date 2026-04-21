@@ -1,7 +1,6 @@
 from app import db
 from datetime import datetime, timezone
 import bcrypt
-import json
 
 
 class OTP(db.Model):
@@ -196,35 +195,45 @@ class AdminArchive(db.Model):
         default=lambda: datetime.now(timezone.utc),
     )
     archived_by       = db.Column(db.Integer, nullable=True)   # admin_id of deleter
-    archived_reason_code = db.Column(db.String(50), nullable=True)
-    archived_reason_text = db.Column(db.String(500), nullable=True)
  
     def __repr__(self):
         return f"<AdminArchive admin_id={self.admin_id} username={self.username}>"
 
 
 class AdminAuditLog(db.Model):
-    # Append-only audit trail for admin/super-admin sensitive actions.
-    __tablename__ = "admin_audit_log_tbl"
+    __tablename__ = "admin_audit_logs_tbl"
     __table_args__ = {"schema": "smart_cane_db"}
 
-    audit_id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    audit_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+
     actor_admin_id = db.Column(
         db.Integer,
         db.ForeignKey("smart_cane_db.admin_tbl.admin_id"),
         nullable=False,
         index=True,
     )
-    target_admin_id = db.Column(db.Integer, nullable=True, index=True)
-    target_concern_id = db.Column(db.Integer, nullable=True, index=True)
-    action_type = db.Column(db.String(50), nullable=False, index=True)
+    target_admin_id = db.Column(
+        db.Integer,
+        db.ForeignKey("smart_cane_db.admin_tbl.admin_id"),
+        nullable=True,
+        index=True,
+    )
+
+    action_type = db.Column(db.String(100), nullable=False, index=True)
     old_value_json = db.Column(db.Text, nullable=True)
     new_value_json = db.Column(db.Text, nullable=True)
-    reason_code = db.Column(db.String(50), nullable=False)
-    reason_text = db.Column(db.String(500), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="success")
-    failure_message = db.Column(db.String(255), nullable=True)
-    ip_address = db.Column(db.String(45), nullable=True)
+
+    reason_code = db.Column(db.String(100), nullable=True)
+    reason_text = db.Column(db.Text, nullable=True)
+
+    status = db.Column(
+        db.Enum("success", "failed", name="audit_status", schema="smart_cane_db"),
+        nullable=False,
+        default="success",
+        index=True,
+    )
+
+    ip_address = db.Column(db.String(64), nullable=True)
     user_agent = db.Column(db.String(255), nullable=True)
     created_at = db.Column(
         db.TIMESTAMP,
@@ -233,57 +242,11 @@ class AdminAuditLog(db.Model):
         index=True,
     )
 
-    actor = db.relationship("Admin", lazy=True)
-
-    def to_dict(self):
-        actor_name = None
-        if self.actor:
-            actor_name = " ".join(
-                p for p in [self.actor.first_name, self.actor.last_name] if p
-            ).strip()
-
-        parsed_old_value = {}
-        if self.old_value_json:
-            try:
-                parsed_old_value = json.loads(self.old_value_json)
-            except Exception:
-                parsed_old_value = {}
-
-        deleted_admin_name = (
-            parsed_old_value.get("full_name")
-            or parsed_old_value.get("deleted_admin_name")
-            or parsed_old_value.get("username")
-        )
-        deleted_concern_message = (
-            parsed_old_value.get("message")
-            or parsed_old_value.get("deleted_concern_message")
-        )
-        deleted_device_serial = (
-            parsed_old_value.get("deleted_device_serial")
-            or parsed_old_value.get("device_serial_number")
-        )
-
-        return {
-            "audit_id": self.audit_id,
-            "actor_admin_id": self.actor_admin_id,
-            "actor_name": actor_name,
-            "target_admin_id": self.target_admin_id,
-            "target_concern_id": self.target_concern_id,
-            "action_type": self.action_type,
-            "reason_code": self.reason_code,
-            "reason_text": self.reason_text,
-            "status": self.status,
-            "failure_message": self.failure_message,
-            "ip_address": self.ip_address,
-            "user_agent": self.user_agent,
-            "deleted_admin_name": deleted_admin_name,
-            "deleted_concern_message": deleted_concern_message,
-            "deleted_device_serial": deleted_device_serial,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+    actor_admin = db.relationship("Admin", foreign_keys=[actor_admin_id], lazy=True)
+    target_admin = db.relationship("Admin", foreign_keys=[target_admin_id], lazy=True)
 
     def __repr__(self):
-        return f"<AdminAuditLog #{self.audit_id} {self.action_type} by {self.actor_admin_id}>"
+        return f"<AdminAuditLog {self.action_type} by {self.actor_admin_id}>"
 
 class GuardianInvitation(db.Model):
     __tablename__ = "guardian_invitations"
@@ -755,10 +718,6 @@ class GuardianConcern(db.Model):
     admin_reply         = db.Column(db.Text,      nullable=True, default=None)
     replied_by_admin_id = db.Column(db.Integer,   nullable=True, default=None)
     replied_at          = db.Column(db.TIMESTAMP, nullable=True, default=None)
-    process_stage       = db.Column(db.String(50), nullable=False, default="new", index=True)
-    resolution_remarks  = db.Column(db.Text, nullable=True, default=None)
-    process_updated_by_admin_id = db.Column(db.Integer, nullable=True, default=None)
-    process_updated_at  = db.Column(db.TIMESTAMP, nullable=True, default=None)
  
     created_at  = db.Column(
         db.TIMESTAMP,
@@ -772,12 +731,6 @@ class GuardianConcern(db.Model):
         default=lambda:  datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
-
-    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
-    deleted_at = db.Column(db.TIMESTAMP, nullable=True, default=None)
-    deleted_by_admin_id = db.Column(db.Integer, nullable=True, default=None)
-    deleted_reason_code = db.Column(db.String(50), nullable=True)
-    deleted_reason_text = db.Column(db.String(500), nullable=True)
  
     def to_dict(self):
         return {
@@ -789,17 +742,8 @@ class GuardianConcern(db.Model):
             "admin_reply":         self.admin_reply,
             "replied_by_admin_id": self.replied_by_admin_id,
             "replied_at":          self.replied_at.isoformat() if self.replied_at else None,
-            "process_stage":       self.process_stage,
-            "resolution_remarks":  self.resolution_remarks,
-            "process_updated_by_admin_id": self.process_updated_by_admin_id,
-            "process_updated_at":  self.process_updated_at.isoformat() if self.process_updated_at else None,
             "created_at":          self.created_at.isoformat() if self.created_at else None,
             "updated_at":          self.updated_at.isoformat() if self.updated_at else None,
-            "is_deleted":          self.is_deleted,
-            "deleted_at":          self.deleted_at.isoformat() if self.deleted_at else None,
-            "deleted_by_admin_id": self.deleted_by_admin_id,
-            "deleted_reason_code": self.deleted_reason_code,
-            "deleted_reason_text": self.deleted_reason_text,
         }
  
     def __repr__(self):

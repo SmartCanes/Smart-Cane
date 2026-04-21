@@ -4,60 +4,11 @@ from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
-from sqlalchemy import inspect, text
 
 load_dotenv()
 
 db  = SQLAlchemy()
 jwt = JWTManager()
-
-
-def _ensure_guardian_concern_process_columns(app: Flask):
-    """Best-effort schema sync for concern process tracking fields."""
-    try:
-        inspector = inspect(db.engine)
-        table_name = "guardian_concerns_tbl"
-        schema_name = "smart_cane_db"
-
-        if not inspector.has_table(table_name, schema=schema_name):
-            return
-
-        columns = {
-            col.get("name")
-            for col in inspector.get_columns(table_name, schema=schema_name)
-        }
-
-        statements = []
-        if "process_stage" not in columns:
-            statements.append(
-                "ALTER TABLE smart_cane_db.guardian_concerns_tbl "
-                "ADD COLUMN process_stage VARCHAR(50) NOT NULL DEFAULT 'new'"
-            )
-        if "resolution_remarks" not in columns:
-            statements.append(
-                "ALTER TABLE smart_cane_db.guardian_concerns_tbl "
-                "ADD COLUMN resolution_remarks TEXT NULL"
-            )
-        if "process_updated_by_admin_id" not in columns:
-            statements.append(
-                "ALTER TABLE smart_cane_db.guardian_concerns_tbl "
-                "ADD COLUMN process_updated_by_admin_id INT NULL"
-            )
-        if "process_updated_at" not in columns:
-            statements.append(
-                "ALTER TABLE smart_cane_db.guardian_concerns_tbl "
-                "ADD COLUMN process_updated_at TIMESTAMP NULL"
-            )
-
-        with db.engine.begin() as conn:
-            for ddl in statements:
-                conn.execute(text(ddl))
-
-        if statements:
-            app.logger.info("Applied guardian concern process schema sync")
-    except Exception:
-        # Non-blocking to avoid breaking startup in restricted DB environments.
-        app.logger.exception("Failed to sync guardian concern process schema")
 
 
 def create_app():
@@ -71,12 +22,15 @@ def create_app():
 
     db.init_app(app)
     jwt.init_app(app)
-    frontend_origins = os.getenv("FRONTEND_URL")
-    if frontend_origins:
-        cors_origins = [origin.strip() for origin in frontend_origins.split(",") if origin.strip()]
-    else:
-        cors_origins = ["http://localhost:5174", "http://127.0.0.1:5174"]
-    CORS(app, origins=cors_origins, supports_credentials=True)
+    raw_origins = os.getenv("FRONTEND_URL", "http://localhost:5173,http://localhost:5174")
+    allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    CORS(
+        app,
+        origins=allowed_origins,
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
 
     @app.route("/static/uploads/profiles/<filename>")
     def serve_profile_image(filename: str):
@@ -105,7 +59,6 @@ def create_app():
     app.register_blueprint(restore_bp)
 
     with app.app_context():
-        _ensure_guardian_concern_process_columns(app)
-        #db.create_all()
-        pass
+        db.create_all()
+
     return app
