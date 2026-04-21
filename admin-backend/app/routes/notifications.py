@@ -22,6 +22,33 @@ def _current_admin():
     return Admin.query.get(admin_id)
 
 
+def _extract_concern_source(raw_message: str | None):
+    msg = str(raw_message or "")
+    if not msg.startswith("[Source:"):
+        return "Unknown", msg.strip()
+
+    closing = msg.find("]")
+    if closing == -1:
+        return "Unknown", msg.strip()
+
+    source_key = msg[len("[Source:"):closing].strip().lower()
+    clean_message = msg[closing + 1 :].strip()
+
+    source_map = {
+        "guest-landing": "Guest Page",
+        "guardian-dashboard": "Dashboard",
+    }
+    source_label = source_map.get(source_key, source_key.replace("-", " ").title() or "Unknown")
+    return source_label, clean_message
+
+
+def _concern_preview(text: str, max_len: int = 120):
+    value = (text or "").strip()
+    if len(value) <= max_len:
+        return value
+    return f"{value[:max_len]}..."
+
+
 def _ensure_concern_notifications(limit: int = 50):
     # Sync notification rows for concerns submitted outside the admin app.
     concerns = (
@@ -43,11 +70,16 @@ def _ensure_concern_notifications(limit: int = 50):
         if already:
             continue
 
+        source_label, clean_message = _extract_concern_source(c.message)
+
         n = Notification(
             audience="all_admins",
             type="guardian_concern",
             title="New guardian concern",
-            body=f"{c.name}: {c.message[:120]}{'…' if c.message and len(c.message) > 120 else ''}",
+            body=(
+                f"{c.name} ({c.email}) submitted a concern from {source_label}: "
+                f"{_concern_preview(clean_message)}"
+            ),
             link_path="/guardian-concerns",
             related_concern_id=c.concern_id,
         )

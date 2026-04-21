@@ -84,6 +84,9 @@ def create_admin():
     if err:
         return err
 
+    caller_id = int(get_jwt_identity())
+    caller = Admin.query.get(caller_id)
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"message": "Request body must be JSON."}), 400
@@ -131,8 +134,12 @@ def create_admin():
     create_notification(
         audience="all_admins",
         type="admin_created",
-        title="New admin created",
-        body=f"{new_admin.first_name} {new_admin.last_name} ({new_admin.email}) was added.",
+        title="Admin invitation sent",
+        body=(
+            f"{(caller.first_name + ' ' + caller.last_name).strip() if caller else 'An admin'} "
+            f"({(caller.role or 'admin').replace('_', ' ') if caller else 'admin'}) "
+            f"invited {new_admin.email} to be {(new_admin.role or 'admin').replace('_', ' ')}."
+        ),
         link_path="/admins",
         related_admin_id=new_admin.admin_id,
     )
@@ -248,12 +255,15 @@ def delete_admin(target_id):
         return jsonify({"message": "reason_text is required and must be at least 10 characters."}), 400
 
     caller_id = int(get_jwt_identity())
+    caller = Admin.query.get(caller_id)
 
     # Prevent super-admin from deleting themselves
     if caller_id == target_id:
         return jsonify({"message": "You cannot delete your own account."}), 400
 
     target = Admin.query.get_or_404(target_id)
+    deleted_email = target.email
+    deleted_role = (target.role or "admin").replace("_", " ")
 
     archive = AdminArchive(
         admin_id            = target.admin_id,
@@ -304,6 +314,26 @@ def delete_admin(target_id):
     db.session.delete(target)
     db.session.commit()
 
+    try:
+        actor_name = (
+            " ".join(part for part in [caller.first_name if caller else "", caller.last_name if caller else ""] if part).strip()
+            or "A super admin"
+        )
+        actor_role = (caller.role if caller and caller.role else "super_admin").replace("_", " ")
+        create_notification(
+            audience="all_admins",
+            type="admin_deleted",
+            title="Admin account deleted",
+            body=(
+                f"{actor_name} ({actor_role}) deleted {deleted_email} "
+                f"({deleted_role}). Reason: {reason_code.replace('_', ' ')}."
+            ),
+            link_path="/admins",
+            related_admin_id=caller_id,
+        )
+    except Exception:
+        pass
+
     return jsonify({"message": "Admin deleted and archived successfully."}), 200
 
 
@@ -316,6 +346,7 @@ def list_audit_logs():
 
     action_type = (request.args.get("action_type") or "").strip()
     actor_admin_id = (request.args.get("actor_admin_id") or "").strip()
+    date_filter = (request.args.get("date_filter") or "").strip()
     q = (request.args.get("q") or "").strip()
     page = max(int(request.args.get("page", 1)), 1)
     limit = min(max(int(request.args.get("limit", 20)), 1), 100)
@@ -323,9 +354,30 @@ def list_audit_logs():
     query = AdminAuditLog.query
 
     if action_type:
-        query = query.filter(AdminAuditLog.action_type == action_type)
+        if action_type == "device_delete":
+            query = query.filter(AdminAuditLog.action_type.in_(["device_delete", "device_deleted"]))
+        else:
+            query = query.filter(AdminAuditLog.action_type == action_type)
     if actor_admin_id.isdigit():
         query = query.filter(AdminAuditLog.actor_admin_id == int(actor_admin_id))
+
+    if date_filter:
+        now = datetime.now(timezone.utc)
+        start_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+
+        if date_filter == "today":
+            query = query.filter(AdminAuditLog.created_at >= start_today)
+        elif date_filter == "last7":
+            query = query.filter(AdminAuditLog.created_at >= (start_today - timedelta(days=6)))
+        elif date_filter == "last30":
+            query = query.filter(AdminAuditLog.created_at >= (start_today - timedelta(days=29)))
+        elif date_filter == "this_month":
+            start_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+            query = query.filter(AdminAuditLog.created_at >= start_month)
+        elif date_filter == "this_year":
+            start_year = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+            query = query.filter(AdminAuditLog.created_at >= start_year)
+
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -437,7 +489,10 @@ def change_credentials():
         audience="super_admins",
         type="admin_setup_completed",
         title="Admin completed account setup",
-        body=f"{admin.first_name} {admin.last_name} finished setting up their account.",
+        body=(
+            f"{admin.first_name} {admin.last_name} "
+            f"({(admin.role or 'admin').replace('_', ' ')}) finished account setup."
+        ),
         link_path="/admins",
         related_admin_id=admin.admin_id,
     )
