@@ -1,5 +1,11 @@
 # Smart Cane System – Docker Setup
 
+iCane is an IoT-enabled smart assistive device designed to improve the safety, mobility, and independence of visually impaired individuals. It combines sensor-based obstacle detection (ultrasonic and infrared) with vibration feedback to provide real-time hazard awareness.
+
+The system integrates AI-powered visual recognition to identify surrounding objects and deliver voice-based environmental feedback, enhancing user understanding of their surroundings. For safety and monitoring, it includes GPS tracking for real-time location updates and an SOS emergency alert system that notifies guardians during critical situations.
+
+Additionally, iCane supports route navigation through an IoT-connected web monitoring platform, enabling remote tracking and assistance. Built using a structured development approach, the system demonstrates the practical integration of IoT, AI, and assistive technologies into a unified accessibility solution.
+
 This project uses **Docker Compose** to orchestrate multiple services including backend APIs, frontend apps, database, admin panels, and geolocation services.
 
 ## 🧩 Services Overview
